@@ -12,6 +12,7 @@ func TestCallOpenAI(t *testing.T) {
 	toolArgs := `{
 		"action": "ignore",
 		"reason": "Recurring dependency alert",
+		"confidence": 0.95,
 		"summary": "",
 		"suggested_rule": {
 			"id_hint": "github_dependabot_repo_x",
@@ -83,14 +84,101 @@ func TestCallOpenAI(t *testing.T) {
 	if result.SuggestedRule.Match.FromEmail != "notifications@github.com" {
 		t.Errorf("from_email = %q", result.SuggestedRule.Match.FromEmail)
 	}
+	if result.Confidence != 0.95 {
+		t.Errorf("confidence = %f, want 0.95", result.Confidence)
+	}
+}
+
+func TestFallback_LowConfidence(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		body, _ := io.ReadAll(r.Body)
+		var req chatRequest
+		json.Unmarshal(body, &req)
+
+		var args string
+		if req.Model == "gpt-4o-mini" {
+			args = `{"action":"needs_review","reason":"Unclear email","confidence":0.4}`
+		} else {
+			args = `{"action":"daily_summary","reason":"Newsletter from vendor","confidence":0.9,"summary":"Weekly vendor newsletter"}`
+		}
+
+		resp := chatResponse{
+			Choices: []chatChoice{{
+				Message: chatResponseMsg{
+					ToolCalls: []toolCall{{
+						Function: toolCallFunction{Name: "classify_email", Arguments: args},
+					}},
+				},
+			}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	primary, err := callOpenAI("key", "gpt-4o-mini", server.URL, "sys", "usr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if primary.Confidence >= 0.7 {
+		t.Fatalf("expected low confidence, got %f", primary.Confidence)
+	}
+
+	fallback, err := callOpenAI("key", "gpt-4o", server.URL, "sys", "usr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fallback.Action != "daily_summary" {
+		t.Errorf("fallback action = %q, want daily_summary", fallback.Action)
+	}
+	if fallback.Confidence < 0.7 {
+		t.Errorf("fallback confidence = %f, expected >= 0.7", fallback.Confidence)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 API calls, got %d", callCount)
+	}
+}
+
+func TestFallback_HighConfidence_NoEscalation(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		resp := chatResponse{
+			Choices: []chatChoice{{
+				Message: chatResponseMsg{
+					ToolCalls: []toolCall{{
+						Function: toolCallFunction{
+							Name:      "classify_email",
+							Arguments: `{"action":"ignore","reason":"Marketing","confidence":0.95}`,
+						},
+					}},
+				},
+			}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	result, err := callOpenAI("key", "gpt-4o-mini", server.URL, "sys", "usr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Confidence < 0.7 {
+		t.Errorf("expected high confidence, got %f", result.Confidence)
+	}
+	if callCount != 1 {
+		t.Errorf("expected 1 API call (no escalation), got %d", callCount)
+	}
 }
 
 func TestToResponse(t *testing.T) {
 	summary := "Bank declined a transaction"
 	result := &classifyResult{
-		Action:  "alert_now",
-		Reason:  "Requires immediate attention",
-		Summary: summary,
+		Action:     "alert_now",
+		Reason:     "Requires immediate attention",
+		Summary:    summary,
+		Confidence: 0.92,
 	}
 
 	resp := toResponse(result)
@@ -146,7 +234,7 @@ func TestBuildSystemPrompt(t *testing.T) {
 	if prompt == "" {
 		t.Fatal("empty system prompt")
 	}
-	for _, want := range []string{"Classify this email.", "alert_now", "from_email", "regex is NOT supported"} {
+	for _, want := range []string{"Classify this email.", "alert_now", "from_email", "regex is NOT supported", "Confidence"} {
 		if !contains(prompt, want) {
 			t.Errorf("system prompt missing %q", want)
 		}
@@ -202,6 +290,9 @@ func TestToolSchema(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Fatal("empty schema JSON")
+	}
+	if !contains(string(data), "confidence") {
+		t.Error("tool schema missing confidence field")
 	}
 }
 

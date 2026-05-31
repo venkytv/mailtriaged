@@ -148,6 +148,22 @@ classifier:
   timeout_seconds: 30
 ```
 
+**Tiered classification** — use a cheap model for obvious emails, escalate to a capable model when uncertain:
+```yaml
+classifier:
+  command:
+    - classifier-openai
+    - --model
+    - gpt-4o-mini
+    - --fallback-model
+    - gpt-4o
+    - --confidence-threshold
+    - "0.7"
+  timeout_seconds: 60
+```
+
+The primary model self-reports a confidence score (0.0–1.0). If it falls below the threshold, the classifier automatically re-runs the same request with the fallback model. Use `--verbose` to see which model handled each email.
+
 **API key** — set `OPENAI_API_KEY` env var, or use Keychain:
 ```bash
 security add-generic-password -s openai-mailtriaged -w
@@ -164,6 +180,8 @@ classifier:
 | Flag | Default | Description |
 |---|---|---|
 | `--model` | `gpt-4o-mini` | OpenAI model name |
+| `--fallback-model` | | More capable model for low-confidence classifications |
+| `--confidence-threshold` | `0.7` | Confidence below this triggers the fallback model |
 | `--api-key-command` | | Shell command to retrieve API key |
 | `--base-url` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
 | `--verbose` | `false` | Print debug info to stderr |

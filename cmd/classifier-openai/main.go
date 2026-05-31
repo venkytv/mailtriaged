@@ -3,15 +3,19 @@
 // using tool/function calling to enforce the response schema, and writes the
 // classifier response to stdout.
 //
+// Supports tiered classification: a cheap model handles obvious emails, and
+// a more capable fallback model is called when the primary model reports low
+// confidence.
+//
 // Usage:
 //
 //	echo '{"schema_version":1,...}' | classifier-openai
-//	echo '{"schema_version":1,...}' | classifier-openai --model gpt-4o --verbose
+//	echo '{"schema_version":1,...}' | classifier-openai --model gpt-4o-mini --fallback-model gpt-4o
 //
 // In mailtriaged config.yaml:
 //
 //	classifier:
-//	  command: ["classifier-openai", "--model", "gpt-4o-mini"]
+//	  command: ["classifier-openai", "--model", "gpt-4o-mini", "--fallback-model", "gpt-4o"]
 package main
 
 import (
@@ -148,11 +152,14 @@ type classifyResult struct {
 	Action        string         `json:"action"`
 	Reason        string         `json:"reason"`
 	Summary       string         `json:"summary,omitempty"`
+	Confidence    float64        `json:"confidence"`
 	SuggestedRule *suggestedRule `json:"suggested_rule,omitempty"`
 }
 
 func main() {
 	model := flag.String("model", "gpt-4o-mini", "OpenAI model")
+	fallbackModel := flag.String("fallback-model", "", "more capable model to use when primary confidence is low")
+	confidenceThreshold := flag.Float64("confidence-threshold", 0.7, "confidence below this triggers fallback model")
 	apiKeyCmd := flag.String("api-key-command", "", "shell command to retrieve API key (alternative to OPENAI_API_KEY env)")
 	baseURL := flag.String("base-url", "https://api.openai.com/v1", "OpenAI-compatible API base URL")
 	verbose := flag.Bool("verbose", false, "print debug info to stderr")
@@ -178,12 +185,32 @@ func main() {
 
 	if *verbose {
 		fmt.Fprintf(os.Stderr, "classifier-openai: model=%s base_url=%s\n", *model, *baseURL)
-		fmt.Fprintf(os.Stderr, "classifier-openai: system_prompt=%d bytes, user_prompt=%d bytes\n", len(systemPrompt), len(userPrompt))
+		if *fallbackModel != "" {
+			fmt.Fprintf(os.Stderr, "classifier-openai: fallback_model=%s threshold=%.2f\n", *fallbackModel, *confidenceThreshold)
+		}
 	}
 
 	result, err := callOpenAI(apiKey, *model, *baseURL, systemPrompt, userPrompt)
 	if err != nil {
 		fatal("%v", err)
+	}
+
+	usedModel := *model
+	if *fallbackModel != "" && result.Confidence < *confidenceThreshold {
+		if *verbose {
+			fmt.Fprintf(os.Stderr, "classifier-openai: %s confidence=%.2f < threshold=%.2f, escalating to %s\n",
+				*model, result.Confidence, *confidenceThreshold, *fallbackModel)
+		}
+		result, err = callOpenAI(apiKey, *fallbackModel, *baseURL, systemPrompt, userPrompt)
+		if err != nil {
+			fatal("fallback model: %v", err)
+		}
+		usedModel = *fallbackModel
+	}
+
+	if *verbose {
+		fmt.Fprintf(os.Stderr, "classifier-openai: classified by %s confidence=%.2f action=%s\n",
+			usedModel, result.Confidence, result.Action)
 	}
 
 	resp := toResponse(result)
@@ -243,7 +270,13 @@ func buildSystemPrompt(req request) string {
 	sb.WriteString("- Set safety to \"narrow\" if the rule uses multiple match fields or is very specific\n")
 	sb.WriteString("- Set safety to \"broad\" if the rule uses a single field like from_domain alone\n")
 	sb.WriteString("- Omit suggested_rule if the email is unusual or doesn't fit a repeatable pattern\n")
-	sb.WriteString("- Provide a summary for alert_now and daily_summary actions\n")
+	sb.WriteString("- Provide a summary for alert_now and daily_summary actions\n\n")
+
+	sb.WriteString("Confidence guidelines:\n")
+	sb.WriteString("- 0.9-1.0: obvious classification (e.g. known sender pattern, clear marketing/spam)\n")
+	sb.WriteString("- 0.7-0.9: reasonably confident but some ambiguity\n")
+	sb.WriteString("- 0.5-0.7: uncertain, could go either way\n")
+	sb.WriteString("- below 0.5: very unsure, email is unusual or complex\n")
 	return sb.String()
 }
 
@@ -285,6 +318,10 @@ func classifyToolSchema() toolDef {
 					"reason": map[string]any{
 						"type":        "string",
 						"description": "Brief explanation of why this action was chosen",
+					},
+					"confidence": map[string]any{
+						"type":        "number",
+						"description": "How confident you are in this classification, from 0.0 (uncertain) to 1.0 (obvious). Use low values (<0.7) when the email is ambiguous, unusual, or could reasonably be classified differently.",
 					},
 					"summary": map[string]any{
 						"type":        "string",
@@ -332,7 +369,7 @@ func classifyToolSchema() toolDef {
 						"additionalProperties": false,
 					},
 				},
-				"required":             []string{"action", "reason"},
+				"required":             []string{"action", "reason", "confidence"},
 				"additionalProperties": false,
 			},
 		},
