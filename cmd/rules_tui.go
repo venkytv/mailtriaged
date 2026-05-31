@@ -144,12 +144,12 @@ func (m tuiModel) advance() (tea.Model, tea.Cmd) {
 }
 
 var (
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	labelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	actionStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11"))
-	safeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "4", Dark: "12"})
+	labelStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "8", Dark: "7"})
+	actionStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"})
+	safeStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"})
+	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "1", Dark: "9"})
+	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "8", Dark: "7"})
 )
 
 func (m tuiModel) View() string {
