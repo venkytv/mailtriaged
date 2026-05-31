@@ -21,6 +21,7 @@ type Result struct {
 	Reason     string          `json:"reason"`
 	Summary    *string         `json:"summary,omitempty"`
 	Classifier *ClassifierInfo `json:"classifier,omitempty"`
+	MsgDBID    int64           `json:"-"`
 }
 
 type ClassifierInfo struct {
@@ -75,10 +76,11 @@ func ClassifyMessage(cfg *config.Config, rulesDir string, msg *email.Message, sk
 	if !cfg.Runtime.DisableRules {
 		if decision := rules.Evaluate(ruleList, msgData); decision != nil {
 			result := &Result{
-				Action: decision.Action,
-				Source: decision.Source,
-				RuleID: decision.RuleID,
-				Reason: decision.Reason,
+				Action:  decision.Action,
+				Source:  decision.Source,
+				RuleID:  decision.RuleID,
+				Reason:  decision.Reason,
+				MsgDBID: msgID,
 			}
 			if db != nil {
 				logDecision(db, msgID, result)
@@ -94,9 +96,10 @@ func ClassifyMessage(cfg *config.Config, rulesDir string, msg *email.Message, sk
 
 	if skipClassifier {
 		result := &Result{
-			Action: rules.ActionNeedsReview,
-			Source: "none",
-			Reason: "No rule matched; classifier skipped (dry-run)",
+			Action:  rules.ActionNeedsReview,
+			Source:  "none",
+			Reason:  "No rule matched; classifier skipped (dry-run)",
+			MsgDBID: msgID,
 		}
 		if db != nil {
 			logDecision(db, msgID, result)
@@ -119,9 +122,10 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, d
 	if record.Err != nil {
 		log.Printf("classifier failed: %v (stderr: %s)", record.Err, record.Stderr)
 		result := &Result{
-			Action: rules.ActionNeedsReview,
-			Source: "classifier",
-			Reason: fmt.Sprintf("Classifier failed: %v", record.Err),
+			Action:  rules.ActionNeedsReview,
+			Source:  "classifier",
+			Reason:  fmt.Sprintf("Classifier failed: %v", record.Err),
+			MsgDBID: msgID,
 			Classifier: &ClassifierInfo{
 				DurationMs: record.DurationMs,
 				Error:      record.Err.Error(),
@@ -149,6 +153,7 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, d
 		Source:  "classifier",
 		Reason:  resp.Reason,
 		Summary: resp.Summary,
+		MsgDBID: msgID,
 		Classifier: &ClassifierInfo{
 			DurationMs: record.DurationMs,
 		},

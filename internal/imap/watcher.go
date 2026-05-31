@@ -10,14 +10,28 @@ import (
 
 	"github.com/venky/mailtriaged/internal/classify"
 	"github.com/venky/mailtriaged/internal/config"
+	"github.com/venky/mailtriaged/internal/email"
 	"github.com/venky/mailtriaged/internal/store"
 )
+
+// ClassifyResult is passed to the OnClassified callback.
+type ClassifyResult struct {
+	Action  string
+	Reason  string
+	Summary *string
+	MsgDBID int64
+}
 
 type Watcher struct {
 	cfg      *config.Config
 	folder   string
 	rulesDir string
 	db       *store.Store
+
+	// OnClassified is called after each message is classified.
+	// The email.Message and ClassifyResult are passed so callers can
+	// dispatch notifications without the imap package knowing about them.
+	OnClassified func(msg *email.Message, r *ClassifyResult)
 
 	mu          sync.Mutex
 	lastUID     uint32
@@ -196,6 +210,14 @@ func (w *Watcher) fetchAndClassify(ctx context.Context, cl *Client, minUID uint3
 		} else {
 			log.Printf("[%s] UID %d: action=%s source=%s from=%s subject=%q",
 				w.folder, uid, result.Action, result.Source, msg.From.Email, msg.Subject)
+			if w.OnClassified != nil {
+				w.OnClassified(msg, &ClassifyResult{
+					Action:  string(result.Action),
+					Reason:  result.Reason,
+					Summary: result.Summary,
+					MsgDBID: result.MsgDBID,
+				})
+			}
 		}
 
 		w.mu.Lock()
