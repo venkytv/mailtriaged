@@ -142,7 +142,7 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, d
 		return result, nil
 	}
 
-	if db != nil && callID > 0 && len(resp.Metadata) > 0 {
+	if db != nil && callID > 0 && resp.Metadata != nil {
 		logClassifierMetadata(db, callID, resp.Metadata)
 	}
 
@@ -210,22 +210,12 @@ func logClassifierCall(db *store.Store, msgID int64, record *classifier.CallReco
 	return id
 }
 
-func logClassifierMetadata(db *store.Store, callID int64, raw json.RawMessage) {
-	var meta struct {
-		Model      string  `json:"model"`
-		Confidence float64 `json:"confidence"`
-		Escalated  bool    `json:"escalated"`
-	}
-	if err := json.Unmarshal(raw, &meta); err != nil {
-		log.Printf("failed to parse classifier metadata: %v", err)
-		return
-	}
+func logClassifierMetadata(db *store.Store, callID int64, meta *classifier.ResponseMetadata) {
 	if _, err := db.InsertClassifierMetadata(&store.ClassifierMetadataRecord{
 		ClassifierCallID: callID,
 		Model:            meta.Model,
 		Confidence:       meta.Confidence,
 		Escalated:        meta.Escalated,
-		RawJSON:          string(raw),
 	}); err != nil {
 		log.Printf("failed to log classifier metadata: %v", err)
 	}

@@ -183,7 +183,6 @@ type ClassifierMetadataRecord struct {
 	Model            string
 	Confidence       float64
 	Escalated        bool
-	RawJSON          string
 }
 
 func (s *Store) InsertClassifierMetadata(m *ClassifierMetadataRecord) (int64, error) {
@@ -192,9 +191,9 @@ func (s *Store) InsertClassifierMetadata(m *ClassifierMetadataRecord) (int64, er
 		escalated = 1
 	}
 	result, err := s.db.Exec(
-		`INSERT INTO classifier_metadata (classifier_call_id, model, confidence, escalated, raw_json, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		m.ClassifierCallID, m.Model, m.Confidence, escalated, m.RawJSON,
+		`INSERT INTO classifier_metadata (classifier_call_id, model, confidence, escalated, created_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		m.ClassifierCallID, m.Model, m.Confidence, escalated,
 		time.Now().UTC().Format(time.RFC3339),
 	)
 	if err != nil {

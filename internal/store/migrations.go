@@ -83,7 +83,6 @@ var migrations = []string{
 		model TEXT,
 		confidence REAL,
 		escalated INTEGER NOT NULL DEFAULT 0,
-		raw_json TEXT,
 		created_at TEXT NOT NULL,
 		FOREIGN KEY(classifier_call_id) REFERENCES classifier_calls(id)
 	);`,

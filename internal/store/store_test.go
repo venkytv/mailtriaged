@@ -304,7 +304,6 @@ func TestInsertClassifierMetadata(t *testing.T) {
 		Model:            "gpt-4o-mini",
 		Confidence:       0.92,
 		Escalated:        false,
-		RawJSON:          `{"model":"gpt-4o-mini","confidence":0.92,"escalated":false}`,
 	})
 	if err != nil {
 		t.Fatalf("inserting metadata: %v", err)
@@ -335,7 +334,6 @@ func TestGetClassifierStats(t *testing.T) {
 		Model:            "gpt-4o-mini",
 		Confidence:       0.95,
 		Escalated:        false,
-		RawJSON:          "{}",
 	})
 
 	msgID2, _ := s.InsertMessage(&MessageRecord{
@@ -356,7 +354,6 @@ func TestGetClassifierStats(t *testing.T) {
 		Model:            "gpt-4o",
 		Confidence:       0.85,
 		Escalated:        true,
-		RawJSON:          "{}",
 	})
 
 	stats, err := s.GetClassifierStats("2000-01-01T00:00:00Z")
