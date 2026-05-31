@@ -49,7 +49,7 @@ func runStats(cmd *cobra.Command, args []string) error {
 	if len(stats.ByModel) > 0 {
 		fmt.Printf("\nBy model:\n")
 		for model, count := range stats.ByModel {
-			fmt.Printf("  %-30s %d\n", model, count)
+			fmt.Printf("  %-20s %d\n", model, count)
 		}
 	}
 
