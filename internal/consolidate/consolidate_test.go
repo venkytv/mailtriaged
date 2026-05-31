@@ -49,7 +49,7 @@ func TestPromote_NarrowRule(t *testing.T) {
 	candidatesPath := filepath.Join(dir, "800-llm-candidates.yaml")
 	activePath := filepath.Join(dir, "100-active.yaml")
 
-	if err := Promote(candidatesPath, activePath, "candidate_20260531_091500"); err != nil {
+	if err := Promote(candidatesPath, activePath, "candidate_20260531_091500", ""); err != nil {
 		t.Fatalf("promote failed: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestPromote_BroadRuleRejected(t *testing.T) {
 	candidatesPath := filepath.Join(dir, "800-llm-candidates.yaml")
 	activePath := filepath.Join(dir, "100-active.yaml")
 
-	err := Promote(candidatesPath, activePath, "candidate_20260531_100000")
+	err := Promote(candidatesPath, activePath, "candidate_20260531_100000", "")
 	if err == nil {
 		t.Fatal("expected safety check to reject broad rule")
 	}
@@ -99,7 +99,7 @@ func TestPromote_NotFound(t *testing.T) {
 	candidatesPath := filepath.Join(dir, "800-llm-candidates.yaml")
 	activePath := filepath.Join(dir, "100-active.yaml")
 
-	err := Promote(candidatesPath, activePath, "nonexistent")
+	err := Promote(candidatesPath, activePath, "nonexistent", "")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("expected not found error, got: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestPromote_ValidatesAsRule(t *testing.T) {
 	candidatesPath := filepath.Join(dir, "800-llm-candidates.yaml")
 	activePath := filepath.Join(dir, "100-active.yaml")
 
-	if err := Promote(candidatesPath, activePath, "candidate_20260531_091500"); err != nil {
+	if err := Promote(candidatesPath, activePath, "candidate_20260531_091500", ""); err != nil {
 		t.Fatalf("promote failed: %v", err)
 	}
 
@@ -167,9 +167,30 @@ func TestPromote_DuplicateID(t *testing.T) {
 	data, _ := yaml.Marshal(&existing)
 	os.WriteFile(activePath, data, 0644)
 
-	err := Promote(candidatesPath, activePath, "candidate_20260531_091500")
+	err := Promote(candidatesPath, activePath, "candidate_20260531_091500", "")
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("expected duplicate error, got: %v", err)
+	}
+}
+
+func TestPromote_ActionOverride(t *testing.T) {
+	dir := setupTestDir(t)
+	candidatesPath := filepath.Join(dir, "800-llm-candidates.yaml")
+	activePath := filepath.Join(dir, "100-active.yaml")
+
+	if err := Promote(candidatesPath, activePath, "candidate_20260531_091500", rules.ActionAlertNow); err != nil {
+		t.Fatalf("promote with action override failed: %v", err)
+	}
+
+	data, err := os.ReadFile(activePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "alert_now") {
+		t.Error("expected overridden action alert_now in active file")
+	}
+	if strings.Contains(string(data), "action: ignore") {
+		t.Error("original action should have been overridden")
 	}
 }
 

@@ -30,6 +30,7 @@ type Classifier struct {
 	Command             []string `yaml:"command"`
 	TimeoutSeconds      int      `yaml:"timeout_seconds"`
 	MaxBodyExcerptChars int      `yaml:"max_body_excerpt_chars"`
+	Instruction         string   `yaml:"instruction"`
 }
 
 type Notifications struct {

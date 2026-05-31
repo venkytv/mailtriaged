@@ -10,6 +10,8 @@ import (
 	"github.com/venky/mailtriaged/internal/rules"
 )
 
+var promoteAction string
+
 var rulesCmd = &cobra.Command{
 	Use:   "rules",
 	Short: "Manage rule files",
@@ -48,6 +50,7 @@ var rulesRejectCmd = &cobra.Command{
 }
 
 func init() {
+	rulesPromoteCmd.Flags().StringVar(&promoteAction, "action", "", "override action (alert_now, daily_summary, ignore, needs_review)")
 	rulesCmd.AddCommand(rulesValidateCmd)
 	rulesCmd.AddCommand(rulesListCmd)
 	rulesCmd.AddCommand(rulesReviewCmd)
@@ -159,7 +162,15 @@ func runRulesReview(cmd *cobra.Command, args []string) error {
 func runRulesPromote(cmd *cobra.Command, args []string) error {
 	candidateID := args[0]
 
-	if err := consolidate.Promote(candidatesPath(), activePath(), candidateID); err != nil {
+	var actionOverride rules.Action
+	if promoteAction != "" {
+		actionOverride = rules.Action(promoteAction)
+		if !rules.IsValidAction(actionOverride) {
+			return fmt.Errorf("invalid action %q; valid: alert_now, daily_summary, ignore, needs_review", promoteAction)
+		}
+	}
+
+	if err := consolidate.Promote(candidatesPath(), activePath(), candidateID, actionOverride); err != nil {
 		return err
 	}
 

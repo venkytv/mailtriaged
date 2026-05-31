@@ -111,7 +111,7 @@ func ClassifyMessage(cfg *config.Config, rulesDir string, msg *email.Message, sk
 }
 
 func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, db *store.Store, msgID int64) (*Result, error) {
-	req := classifier.BuildRequest(msg)
+	req := classifier.BuildRequest(msg, cfg.Classifier.Instruction)
 
 	resp, record := classifier.Execute(cfg.Classifier.Command, req, cfg.Classifier.TimeoutSeconds)
 

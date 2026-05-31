@@ -26,6 +26,10 @@ var validActions = map[Action]bool{
 	ActionNeedsReview:  true,
 }
 
+func IsValidAction(a Action) bool {
+	return validActions[a]
+}
+
 type Rule struct {
 	ID          string `yaml:"id"`
 	Enabled     *bool  `yaml:"enabled"`

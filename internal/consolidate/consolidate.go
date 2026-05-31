@@ -31,7 +31,7 @@ func LoadCandidates(path string) ([]classifier.Candidate, error) {
 	return cf.Candidates, nil
 }
 
-func Promote(candidatesPath, activePath string, candidateID string) error {
+func Promote(candidatesPath, activePath string, candidateID string, actionOverride rules.Action) error {
 	candidates, err := LoadCandidates(candidatesPath)
 	if err != nil {
 		return fmt.Errorf("loading candidates: %w", err)
@@ -50,7 +50,12 @@ func Promote(candidatesPath, activePath string, candidateID string) error {
 		return fmt.Errorf("candidate %q not found", candidateID)
 	}
 
-	issues := rules.CheckSafety(target.Match, target.Action)
+	action := target.Action
+	if actionOverride != "" {
+		action = actionOverride
+	}
+
+	issues := rules.CheckSafety(target.Match, action)
 	if rules.HasRejectIssues(issues) {
 		return fmt.Errorf("candidate %q failed safety check: %s", candidateID, issues[0].Message)
 	}
@@ -59,7 +64,7 @@ func Promote(candidatesPath, activePath string, candidateID string) error {
 		ID:          target.ID,
 		Description: target.Reason,
 		Match:       target.Match,
-		Action:      target.Action,
+		Action:      action,
 		Source:      "classifier",
 	}
 

@@ -43,6 +43,8 @@ classifier:
     - mail-triage
   timeout_seconds: 30
   max_body_excerpt_chars: 6000
+  # Extra guidance appended to the default classifier prompt (see below).
+  # instruction: "Mailing lists should generally be classified as ignore."
 
 notifications:
   telegram:
@@ -113,8 +115,14 @@ mailtriaged summary send
 # Review classifier-suggested candidate rules
 mailtriaged rules review
 
+# Interactively review all candidates (TUI)
+mailtriaged rules tui
+
 # Promote a safe candidate to active rules
 mailtriaged rules promote <candidate-id>
+
+# Promote but override the suggested action
+mailtriaged rules promote <candidate-id> --action ignore
 
 # Reject a broad/unwanted candidate
 mailtriaged rules reject <candidate-id>
@@ -191,6 +199,21 @@ classifier:
 | `--verbose` | `false` | Print debug info to stderr |
 
 The `--base-url` flag lets you point at any OpenAI-compatible API (Azure OpenAI, Ollama, etc.).
+
+## Classifier Instruction
+
+The classifier receives a system prompt that tells it how to classify emails. The built-in default is:
+
+> Classify this email for a single user's personal mail triage. Return strict JSON only. If you suggest a rule, keep it narrow and only use supported match fields.
+
+You can add domain-specific guidance via `classifier.instruction` in config. Your text is **appended** to the default — you don't need to repeat the base prompt:
+
+```yaml
+classifier:
+  instruction: |
+    Mailing lists should generally be classified as ignore.
+    Emails from @mycompany.com are always alert_now.
+```
 
 ## Writing a Custom Classifier
 

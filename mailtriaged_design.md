@@ -115,6 +115,13 @@ classifier:
     - mail-triage
   timeout_seconds: 30
   max_body_excerpt_chars: 6000
+  # Optional extra instruction appended to the default classifier prompt.
+  # The default instruction is:
+  #   "Classify this email for a single user's personal mail triage.
+  #    Return strict JSON only. If you suggest a rule, keep it narrow
+  #    and only use supported match fields."
+  # Use this to add domain-specific guidance without replacing the base prompt.
+  instruction: "Mailing lists should generally be classified as ignore."
 
 notifications:
   telegram:
@@ -511,9 +518,11 @@ Example request sent to stdin:
     ],
     "regex_supported": false
   },
-  "instruction": "Classify this email for a single user's personal mail triage. Return strict JSON only. If you suggest a rule, keep it narrow and only use supported match fields."
+  "instruction": "Classify this email for a single user's personal mail triage. Return strict JSON only. If you suggest a rule, keep it narrow and only use supported match fields.\n\nMailing lists should generally be classified as ignore."
 }
 ```
+
+The `instruction` field always starts with the built-in default prompt. If `classifier.instruction` is set in `config.yaml`, it is appended after the default (separated by a blank line).
 
 ---
 

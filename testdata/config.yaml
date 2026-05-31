@@ -12,6 +12,7 @@ classifier:
     - '{}'
   timeout_seconds: 30
   max_body_excerpt_chars: 6000
+  # instruction: "Extra guidance appended to the default classifier prompt."
 
 notifications:
   telegram:

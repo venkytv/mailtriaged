@@ -85,7 +85,13 @@ var validResponseActions = map[rules.Action]bool{
 	rules.ActionNeedsReview:  true,
 }
 
-func BuildRequest(msg *email.Message) *Request {
+const DefaultInstruction = "Classify this email for a single user's personal mail triage. Return strict JSON only. If you suggest a rule, keep it narrow and only use supported match fields."
+
+func BuildRequest(msg *email.Message, extraInstruction string) *Request {
+	instruction := DefaultInstruction
+	if extraInstruction != "" {
+		instruction = DefaultInstruction + "\n\n" + extraInstruction
+	}
 	return &Request{
 		SchemaVersion: 1,
 		Message: RequestMessage{
@@ -111,7 +117,7 @@ func BuildRequest(msg *email.Message) *Request {
 			SupportedMatchFields: supportedMatchFields,
 			RegexSupported:       false,
 		},
-		Instruction: "Classify this email for a single user's personal mail triage. Return strict JSON only. If you suggest a rule, keep it narrow and only use supported match fields.",
+		Instruction: instruction,
 	}
 }
 

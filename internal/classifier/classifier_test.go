@@ -21,7 +21,7 @@ func TestBuildRequest(t *testing.T) {
 		BodyExcerpt: "body text",
 	}
 
-	req := BuildRequest(msg)
+	req := BuildRequest(msg, "")
 
 	if req.SchemaVersion != 1 {
 		t.Errorf("schema_version: got %d", req.SchemaVersion)
