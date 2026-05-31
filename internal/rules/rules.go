@@ -40,15 +40,15 @@ func (r *Rule) IsEnabled() bool {
 }
 
 type Match struct {
-	FromEmail         string            `yaml:"from_email"`
-	FromDomain        string            `yaml:"from_domain"`
-	ToContains        string            `yaml:"to_contains"`
-	CcContains        string            `yaml:"cc_contains"`
-	ListID            string            `yaml:"list_id"`
-	SubjectContainsAll []string          `yaml:"subject_contains_all"`
-	SubjectContainsAny []string          `yaml:"subject_contains_any"`
-	HeaderEquals      map[string]string `yaml:"header_equals"`
-	HeaderContains    map[string]string `yaml:"header_contains"`
+	FromEmail          string            `yaml:"from_email,omitempty" json:"from_email,omitempty"`
+	FromDomain         string            `yaml:"from_domain,omitempty" json:"from_domain,omitempty"`
+	ToContains         string            `yaml:"to_contains,omitempty" json:"to_contains,omitempty"`
+	CcContains         string            `yaml:"cc_contains,omitempty" json:"cc_contains,omitempty"`
+	ListID             string            `yaml:"list_id,omitempty" json:"list_id,omitempty"`
+	SubjectContainsAll []string          `yaml:"subject_contains_all,omitempty" json:"subject_contains_all,omitempty"`
+	SubjectContainsAny []string          `yaml:"subject_contains_any,omitempty" json:"subject_contains_any,omitempty"`
+	HeaderEquals       map[string]string `yaml:"header_equals,omitempty" json:"header_equals,omitempty"`
+	HeaderContains     map[string]string `yaml:"header_contains,omitempty" json:"header_contains,omitempty"`
 }
 
 func (m *Match) IsEmpty() bool {

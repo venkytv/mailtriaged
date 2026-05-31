@@ -1,0 +1,26 @@
+imap:
+  host: imap.example.com
+  port: 993
+  username: you@example.com
+  password_command: "echo test-password"
+  folders:
+    - INBOX
+
+classifier:
+  command:
+    - ./testdata/mock_classifier.sh
+  timeout_seconds: 5
+  max_body_excerpt_chars: 6000
+
+notifications:
+  telegram:
+    enabled: false
+
+summary:
+  enabled: false
+  send_time: "08:00"
+  timezone: "Europe/London"
+
+runtime:
+  rules_reload_seconds: 30
+  disable_rules: false
