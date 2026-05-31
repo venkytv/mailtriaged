@@ -118,6 +118,10 @@ mailtriaged rules promote <candidate-id>
 
 # Reject a broad/unwanted candidate
 mailtriaged rules reject <candidate-id>
+
+# Classifier statistics (model usage, escalation rate, latency)
+mailtriaged stats              # last 7 days
+mailtriaged stats --days 30    # last 30 days
 ```
 
 ## How it works

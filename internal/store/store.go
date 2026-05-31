@@ -178,6 +178,120 @@ func (s *Store) InsertClassifierCall(c *ClassifierCallRecord) (int64, error) {
 	return result.LastInsertId()
 }
 
+type ClassifierMetadataRecord struct {
+	ClassifierCallID int64
+	Model            string
+	Confidence       float64
+	Escalated        bool
+	RawJSON          string
+}
+
+func (s *Store) InsertClassifierMetadata(m *ClassifierMetadataRecord) (int64, error) {
+	escalated := 0
+	if m.Escalated {
+		escalated = 1
+	}
+	result, err := s.db.Exec(
+		`INSERT INTO classifier_metadata (classifier_call_id, model, confidence, escalated, raw_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		m.ClassifierCallID, m.Model, m.Confidence, escalated, m.RawJSON,
+		time.Now().UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("inserting classifier metadata: %w", err)
+	}
+	return result.LastInsertId()
+}
+
+type ClassifierStats struct {
+	TotalCalls      int
+	ByModel         map[string]int
+	EscalatedCount  int
+	AvgConfidence   float64
+	AvgDurationMs   float64
+	ActionBreakdown map[string]int
+}
+
+func (s *Store) GetClassifierStats(since string) (*ClassifierStats, error) {
+	stats := &ClassifierStats{
+		ByModel:         make(map[string]int),
+		ActionBreakdown: make(map[string]int),
+	}
+
+	row := s.db.QueryRow(
+		`SELECT COUNT(*), COALESCE(AVG(cc.duration_ms), 0)
+		 FROM classifier_calls cc
+		 WHERE cc.created_at >= ?`, since,
+	)
+	if err := row.Scan(&stats.TotalCalls, &stats.AvgDurationMs); err != nil {
+		return nil, fmt.Errorf("querying total calls: %w", err)
+	}
+
+	rows, err := s.db.Query(
+		`SELECT COALESCE(cm.model, 'unknown'), COUNT(*)
+		 FROM classifier_calls cc
+		 LEFT JOIN classifier_metadata cm ON cm.classifier_call_id = cc.id
+		 WHERE cc.created_at >= ?
+		 GROUP BY cm.model`, since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying model breakdown: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var model string
+		var count int
+		if err := rows.Scan(&model, &count); err != nil {
+			return nil, err
+		}
+		stats.ByModel[model] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	row = s.db.QueryRow(
+		`SELECT COUNT(*), COALESCE(AVG(cm.confidence), 0)
+		 FROM classifier_metadata cm
+		 JOIN classifier_calls cc ON cc.id = cm.classifier_call_id
+		 WHERE cc.created_at >= ? AND cm.escalated = 1`, since,
+	)
+	if err := row.Scan(&stats.EscalatedCount, &stats.AvgConfidence); err != nil {
+		return nil, fmt.Errorf("querying escalation stats: %w", err)
+	}
+
+	row = s.db.QueryRow(
+		`SELECT COALESCE(AVG(cm.confidence), 0)
+		 FROM classifier_metadata cm
+		 JOIN classifier_calls cc ON cc.id = cm.classifier_call_id
+		 WHERE cc.created_at >= ?`, since,
+	)
+	if err := row.Scan(&stats.AvgConfidence); err != nil {
+		return nil, fmt.Errorf("querying avg confidence: %w", err)
+	}
+
+	actionRows, err := s.db.Query(
+		`SELECT COALESCE(d.action, 'unknown'), COUNT(*)
+		 FROM classifier_calls cc
+		 JOIN decisions d ON d.message_id = cc.message_id AND d.source = 'classifier'
+		 WHERE cc.created_at >= ?
+		 GROUP BY d.action`, since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying action breakdown: %w", err)
+	}
+	defer actionRows.Close()
+	for actionRows.Next() {
+		var action string
+		var count int
+		if err := actionRows.Scan(&action, &count); err != nil {
+			return nil, err
+		}
+		stats.ActionBreakdown[action] = count
+	}
+	return stats, actionRows.Err()
+}
+
 type SummaryItemRecord struct {
 	MessageID int64
 	Summary   string

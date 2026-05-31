@@ -115,8 +115,9 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, d
 
 	resp, record := classifier.Execute(cfg.Classifier.Command, req, cfg.Classifier.TimeoutSeconds)
 
+	var callID int64
 	if db != nil {
-		logClassifierCall(db, msgID, record)
+		callID = logClassifierCall(db, msgID, record)
 	}
 
 	if record.Err != nil {
@@ -139,6 +140,10 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, d
 			})
 		}
 		return result, nil
+	}
+
+	if db != nil && callID > 0 && len(resp.Metadata) > 0 {
+		logClassifierMetadata(db, callID, resp.Metadata)
 	}
 
 	if resp.SuggestedRule != nil {
@@ -188,9 +193,9 @@ func logDecision(db *store.Store, msgID int64, result *Result) {
 	}
 }
 
-func logClassifierCall(db *store.Store, msgID int64, record *classifier.CallRecord) {
+func logClassifierCall(db *store.Store, msgID int64, record *classifier.CallRecord) int64 {
 	responseJSON := string(record.ResponseJSON)
-	if _, err := db.InsertClassifierCall(&store.ClassifierCallRecord{
+	id, err := db.InsertClassifierCall(&store.ClassifierCallRecord{
 		MessageID:    msgID,
 		Command:      record.Command,
 		RequestJSON:  string(record.RequestJSON),
@@ -198,8 +203,31 @@ func logClassifierCall(db *store.Store, msgID int64, record *classifier.CallReco
 		ExitCode:     record.ExitCode,
 		Stderr:       record.Stderr,
 		DurationMs:   record.DurationMs,
-	}); err != nil {
+	})
+	if err != nil {
 		log.Printf("failed to log classifier call: %v", err)
+	}
+	return id
+}
+
+func logClassifierMetadata(db *store.Store, callID int64, raw json.RawMessage) {
+	var meta struct {
+		Model      string  `json:"model"`
+		Confidence float64 `json:"confidence"`
+		Escalated  bool    `json:"escalated"`
+	}
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		log.Printf("failed to parse classifier metadata: %v", err)
+		return
+	}
+	if _, err := db.InsertClassifierMetadata(&store.ClassifierMetadataRecord{
+		ClassifierCallID: callID,
+		Model:            meta.Model,
+		Confidence:       meta.Confidence,
+		Escalated:        meta.Escalated,
+		RawJSON:          string(raw),
+	}); err != nil {
+		log.Printf("failed to log classifier metadata: %v", err)
 	}
 }
 

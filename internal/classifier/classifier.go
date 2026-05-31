@@ -40,11 +40,12 @@ type RuleCapabilities struct {
 }
 
 type Response struct {
-	SchemaVersion int            `json:"schema_version"`
-	Action        rules.Action   `json:"action"`
-	Reason        string         `json:"reason"`
-	Summary       *string        `json:"summary"`
-	SuggestedRule *SuggestedRule `json:"suggested_rule"`
+	SchemaVersion int              `json:"schema_version"`
+	Action        rules.Action     `json:"action"`
+	Reason        string           `json:"reason"`
+	Summary       *string          `json:"summary"`
+	SuggestedRule *SuggestedRule   `json:"suggested_rule"`
+	Metadata      json.RawMessage  `json:"metadata,omitempty"`
 }
 
 type SuggestedRule struct {

@@ -22,8 +22,8 @@ func TestMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading version: %v", err)
 	}
-	if version != 1 {
-		t.Fatalf("expected version 1, got %d", version)
+	if version != len(migrations) {
+		t.Fatalf("expected version %d, got %d", len(migrations), version)
 	}
 }
 
@@ -37,8 +37,8 @@ func TestMigration_Idempotent(t *testing.T) {
 
 	var count int
 	s.db.QueryRow("SELECT COUNT(*) FROM schema_version").Scan(&count)
-	if count != 1 {
-		t.Fatalf("expected 1 version row, got %d", count)
+	if count != len(migrations) {
+		t.Fatalf("expected %d version rows, got %d", len(migrations), count)
 	}
 }
 
@@ -282,6 +282,119 @@ func TestHighestUID(t *testing.T) {
 	uid, _ = s.HighestUID("you@example.com", "INBOX", 2)
 	if uid != 0 {
 		t.Fatalf("expected 0 for different uid_validity, got %d", uid)
+	}
+}
+
+func TestInsertClassifierMetadata(t *testing.T) {
+	s := openTestDB(t)
+
+	msgID, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 100,
+	})
+	callID, _ := s.InsertClassifierCall(&ClassifierCallRecord{
+		MessageID:    msgID,
+		Command:      "classifier-openai",
+		RequestJSON:  "{}",
+		ResponseJSON: "{}",
+		DurationMs:   200,
+	})
+
+	id, err := s.InsertClassifierMetadata(&ClassifierMetadataRecord{
+		ClassifierCallID: callID,
+		Model:            "gpt-4o-mini",
+		Confidence:       0.92,
+		Escalated:        false,
+		RawJSON:          `{"model":"gpt-4o-mini","confidence":0.92,"escalated":false}`,
+	})
+	if err != nil {
+		t.Fatalf("inserting metadata: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("expected non-zero id")
+	}
+}
+
+func TestGetClassifierStats(t *testing.T) {
+	s := openTestDB(t)
+
+	msgID, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 100,
+	})
+	s.InsertDecision(&DecisionRecord{
+		MessageID: msgID, Action: "ignore", Source: "classifier", Reason: "test",
+	})
+	callID, _ := s.InsertClassifierCall(&ClassifierCallRecord{
+		MessageID:    msgID,
+		Command:      "classifier-openai",
+		RequestJSON:  "{}",
+		ResponseJSON: "{}",
+		DurationMs:   200,
+	})
+	s.InsertClassifierMetadata(&ClassifierMetadataRecord{
+		ClassifierCallID: callID,
+		Model:            "gpt-4o-mini",
+		Confidence:       0.95,
+		Escalated:        false,
+		RawJSON:          "{}",
+	})
+
+	msgID2, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 101,
+	})
+	s.InsertDecision(&DecisionRecord{
+		MessageID: msgID2, Action: "daily_summary", Source: "classifier", Reason: "test",
+	})
+	callID2, _ := s.InsertClassifierCall(&ClassifierCallRecord{
+		MessageID:    msgID2,
+		Command:      "classifier-openai",
+		RequestJSON:  "{}",
+		ResponseJSON: "{}",
+		DurationMs:   400,
+	})
+	s.InsertClassifierMetadata(&ClassifierMetadataRecord{
+		ClassifierCallID: callID2,
+		Model:            "gpt-4o",
+		Confidence:       0.85,
+		Escalated:        true,
+		RawJSON:          "{}",
+	})
+
+	stats, err := s.GetClassifierStats("2000-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("getting stats: %v", err)
+	}
+
+	if stats.TotalCalls != 2 {
+		t.Errorf("total_calls = %d, want 2", stats.TotalCalls)
+	}
+	if stats.ByModel["gpt-4o-mini"] != 1 {
+		t.Errorf("gpt-4o-mini count = %d", stats.ByModel["gpt-4o-mini"])
+	}
+	if stats.ByModel["gpt-4o"] != 1 {
+		t.Errorf("gpt-4o count = %d", stats.ByModel["gpt-4o"])
+	}
+	if stats.EscalatedCount != 1 {
+		t.Errorf("escalated = %d, want 1", stats.EscalatedCount)
+	}
+	if stats.AvgDurationMs != 300 {
+		t.Errorf("avg_duration = %f, want 300", stats.AvgDurationMs)
+	}
+	if stats.ActionBreakdown["ignore"] != 1 {
+		t.Errorf("ignore count = %d", stats.ActionBreakdown["ignore"])
+	}
+	if stats.ActionBreakdown["daily_summary"] != 1 {
+		t.Errorf("daily_summary count = %d", stats.ActionBreakdown["daily_summary"])
+	}
+}
+
+func TestGetClassifierStats_Empty(t *testing.T) {
+	s := openTestDB(t)
+	stats, err := s.GetClassifierStats("2000-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("getting stats: %v", err)
+	}
+	if stats.TotalCalls != 0 {
+		t.Errorf("expected 0 calls, got %d", stats.TotalCalls)
 	}
 }
 

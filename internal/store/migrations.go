@@ -75,6 +75,18 @@ var migrations = []string{
 		sent_at TEXT,
 		FOREIGN KEY(message_id) REFERENCES messages(id)
 	);`,
+
+	// Migration 2: classifier metadata for model tracking
+	`CREATE TABLE classifier_metadata (
+		id INTEGER PRIMARY KEY,
+		classifier_call_id INTEGER NOT NULL,
+		model TEXT,
+		confidence REAL,
+		escalated INTEGER NOT NULL DEFAULT 0,
+		raw_json TEXT,
+		created_at TEXT NOT NULL,
+		FOREIGN KEY(classifier_call_id) REFERENCES classifier_calls(id)
+	);`,
 }
 
 func migrate(db *sql.DB) error {

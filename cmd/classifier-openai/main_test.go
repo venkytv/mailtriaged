@@ -181,7 +181,7 @@ func TestToResponse(t *testing.T) {
 		Confidence: 0.92,
 	}
 
-	resp := toResponse(result)
+	resp := toResponse(result, "gpt-4o", false)
 
 	if resp.SchemaVersion != 1 {
 		t.Errorf("schema_version = %d, want 1", resp.SchemaVersion)
@@ -195,6 +195,18 @@ func TestToResponse(t *testing.T) {
 	if resp.SuggestedRule != nil {
 		t.Error("expected nil suggested_rule")
 	}
+	if resp.Metadata == nil {
+		t.Fatal("expected metadata")
+	}
+	if resp.Metadata.Model != "gpt-4o" {
+		t.Errorf("metadata.model = %q", resp.Metadata.Model)
+	}
+	if resp.Metadata.Confidence != 0.92 {
+		t.Errorf("metadata.confidence = %f", resp.Metadata.Confidence)
+	}
+	if resp.Metadata.Escalated {
+		t.Error("expected escalated=false")
+	}
 
 	out, err := json.Marshal(resp)
 	if err != nil {
@@ -206,17 +218,40 @@ func TestToResponse(t *testing.T) {
 	if parsed.SchemaVersion != 1 {
 		t.Error("roundtrip lost schema_version")
 	}
+	if parsed.Metadata == nil || parsed.Metadata.Model != "gpt-4o" {
+		t.Error("roundtrip lost metadata")
+	}
 }
 
 func TestToResponse_NoSummary(t *testing.T) {
 	result := &classifyResult{
-		Action: "ignore",
-		Reason: "Noise",
+		Action:     "ignore",
+		Reason:     "Noise",
+		Confidence: 0.85,
 	}
 
-	resp := toResponse(result)
+	resp := toResponse(result, "gpt-4o-mini", false)
 	if resp.Summary != nil {
 		t.Errorf("expected nil summary for ignore action, got %v", resp.Summary)
+	}
+}
+
+func TestToResponse_Escalated(t *testing.T) {
+	result := &classifyResult{
+		Action:     "daily_summary",
+		Reason:     "Newsletter",
+		Confidence: 0.88,
+	}
+
+	resp := toResponse(result, "gpt-4o", true)
+	if resp.Metadata == nil {
+		t.Fatal("expected metadata")
+	}
+	if !resp.Metadata.Escalated {
+		t.Error("expected escalated=true")
+	}
+	if resp.Metadata.Model != "gpt-4o" {
+		t.Errorf("model = %q, want gpt-4o", resp.Metadata.Model)
 	}
 }
 

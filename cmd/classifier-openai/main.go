@@ -73,6 +73,13 @@ type response struct {
 	Reason        string         `json:"reason"`
 	Summary       *string        `json:"summary"`
 	SuggestedRule *suggestedRule `json:"suggested_rule"`
+	Metadata      *metadata      `json:"metadata,omitempty"`
+}
+
+type metadata struct {
+	Model      string  `json:"model"`
+	Confidence float64 `json:"confidence"`
+	Escalated  bool    `json:"escalated"`
 }
 
 type suggestedRule struct {
@@ -208,12 +215,14 @@ func main() {
 		usedModel = *fallbackModel
 	}
 
+	escalated := usedModel != *model
+
 	if *verbose {
-		fmt.Fprintf(os.Stderr, "classifier-openai: classified by %s confidence=%.2f action=%s\n",
-			usedModel, result.Confidence, result.Action)
+		fmt.Fprintf(os.Stderr, "classifier-openai: classified by %s confidence=%.2f action=%s escalated=%v\n",
+			usedModel, result.Confidence, result.Action, escalated)
 	}
 
-	resp := toResponse(result)
+	resp := toResponse(result, usedModel, escalated)
 	out, err := json.Marshal(resp)
 	if err != nil {
 		fatal("marshaling response: %v", err)
@@ -447,11 +456,16 @@ func callOpenAI(apiKey, model, baseURL, systemPrompt, userPrompt string) (*class
 	return &result, nil
 }
 
-func toResponse(r *classifyResult) *response {
+func toResponse(r *classifyResult, model string, escalated bool) *response {
 	resp := &response{
 		SchemaVersion: 1,
 		Action:        r.Action,
 		Reason:        r.Reason,
+		Metadata: &metadata{
+			Model:      model,
+			Confidence: r.Confidence,
+			Escalated:  escalated,
+		},
 	}
 	if r.Summary != "" {
 		resp.Summary = &r.Summary
