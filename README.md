@@ -129,6 +129,81 @@ mailtriaged rules reject <candidate-id>
 5. Actions dispatched: `alert_now` → immediate Telegram, `daily_summary` → batched, `ignore` → silent, `needs_review` → included in daily summary
 6. You periodically run `rules review` to promote or reject candidates
 
+## Bundled Classifier (OpenAI)
+
+A default classifier using the OpenAI API is included at `cmd/classifier-openai/`. It uses function calling (tool use) to enforce the response schema.
+
+**Build:**
+```bash
+go build -o ~/bin/classifier-openai ./cmd/classifier-openai/
+```
+
+**Configure mailtriaged to use it:**
+```yaml
+classifier:
+  command:
+    - classifier-openai
+    - --model
+    - gpt-4o-mini
+  timeout_seconds: 30
+```
+
+**API key** — set `OPENAI_API_KEY` env var, or use Keychain:
+```bash
+security add-generic-password -s openai-mailtriaged -w
+
+# then in classifier command:
+classifier:
+  command:
+    - classifier-openai
+    - --api-key-command
+    - "security find-generic-password -s openai-mailtriaged -w"
+```
+
+**Flags:**
+| Flag | Default | Description |
+|---|---|---|
+| `--model` | `gpt-4o-mini` | OpenAI model name |
+| `--api-key-command` | | Shell command to retrieve API key |
+| `--base-url` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
+| `--verbose` | `false` | Print debug info to stderr |
+
+The `--base-url` flag lets you point at any OpenAI-compatible API (Azure OpenAI, Ollama, etc.).
+
+## Writing a Custom Classifier
+
+Any program that reads JSON from stdin and writes JSON to stdout works. The schema is defined in `mailtriaged_design.md`. Use `classifier-openai` as a reference implementation.
+
+**stdin** (mailtriaged sends):
+```json
+{
+  "schema_version": 1,
+  "message": { "from": {...}, "subject": "...", "body_excerpt": "...", ... },
+  "valid_actions": ["alert_now", "daily_summary", "ignore", "needs_review"],
+  "rule_capabilities": { "supported_match_fields": [...], "regex_supported": false },
+  "instruction": "Classify this email..."
+}
+```
+
+**stdout** (your classifier returns):
+```json
+{
+  "schema_version": 1,
+  "action": "ignore",
+  "reason": "Recurring dependency alert",
+  "summary": null,
+  "suggested_rule": {
+    "id_hint": "github_dependabot_ignore",
+    "description": "Ignore Dependabot alerts",
+    "action": "ignore",
+    "safety": "narrow",
+    "match": { "from_email": "notifications@github.com", "subject_contains_all": ["dependabot"] }
+  }
+}
+```
+
+Exit 0 on success. Non-zero exit, invalid JSON, or timeout → mailtriaged treats it as `needs_review`.
+
 ## Watching logs
 
 ```bash

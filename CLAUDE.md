@@ -16,6 +16,7 @@ go run . rules list --config testdata/config.yaml
 
 ```
 cmd/                    CLI commands (cobra)
+cmd/classifier-openai/  Standalone OpenAI classifier binary
 internal/
   config/               Config loading + secret resolution
   rules/                Rule loading, validation, evaluation
