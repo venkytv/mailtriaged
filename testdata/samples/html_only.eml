@@ -1,0 +1,20 @@
+From: Newsletter <news@example.org>
+To: you@example.com
+Subject: Weekly digest
+Date: Sat, 31 May 2026 08:00:00 +0100
+Message-ID: <digest-101@example.org>
+Content-Type: text/html; charset="UTF-8"
+
+<html>
+<head><style>body { font-family: sans-serif; }</style></head>
+<body>
+<h1>Weekly Digest</h1>
+<p>Here are this week's highlights:</p>
+<ul>
+<li>Feature A was released</li>
+<li>Bug B was fixed</li>
+</ul>
+<script>console.log("tracking");</script>
+<p>Thanks for reading.</p>
+</body>
+</html>

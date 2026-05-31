@@ -1,0 +1,34 @@
+imap:
+  host: imap.example.com
+  port: 993
+  username: you@example.com
+  password_command: "echo test-password"
+  folders:
+    - INBOX
+
+classifier:
+  command:
+    - echo
+    - '{}'
+  timeout_seconds: 30
+  max_body_excerpt_chars: 6000
+
+notifications:
+  telegram:
+    enabled: false
+    bot_token_command: ""
+    chat_id: ""
+
+summary:
+  enabled: false
+  send_time: "08:00"
+  timezone: "Europe/London"
+
+runtime:
+  rules_reload_seconds: 30
+  reconnect_backoff_seconds:
+    - 5
+    - 15
+    - 60
+    - 300
+  disable_rules: false

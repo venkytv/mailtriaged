@@ -1,0 +1,19 @@
+From: GitHub <notifications@github.com>
+To: you@example.com
+Subject: [repo-x] Dependabot alert for openssl
+Date: Sat, 31 May 2026 09:15:00 +0100
+Message-ID: <dependabot-123@github.com>
+List-ID: owner/repo-x
+X-GitHub-Reason: security_alert
+Auto-Submitted: auto-generated
+Content-Type: text/plain; charset="UTF-8"
+
+Dependabot has detected a vulnerability in openssl used by repo-x.
+
+Severity: moderate
+Package: openssl
+Vulnerable versions: < 3.0.14
+Patched version: 3.0.14
+
+You can view the alert at:
+https://github.com/owner/repo-x/security/dependabot/1

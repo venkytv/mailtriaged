@@ -1,0 +1,10 @@
+rules:
+  - id: github_ci_daily
+    enabled: true
+    description: "Daily summary for GitHub CI notifications"
+    match:
+      from_email: notifications@github.com
+      header_equals:
+        x-github-reason: ci_activity
+    action: daily_summary
+    source: reviewed

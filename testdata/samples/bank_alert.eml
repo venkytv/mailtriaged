@@ -1,0 +1,14 @@
+From: Bank Alerts <noreply@alerts.bank.com>
+To: you@example.com
+Subject: Transaction declined on your account
+Date: Sat, 31 May 2026 10:30:00 +0100
+Message-ID: <txn-456@alerts.bank.com>
+Content-Type: text/plain; charset="UTF-8"
+
+A transaction on your account ending in 4321 was declined.
+
+Amount: £125.00
+Merchant: ACME Corp
+Date: 31 May 2026
+
+If you did not attempt this transaction, please contact us immediately.

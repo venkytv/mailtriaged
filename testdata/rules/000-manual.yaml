@@ -1,0 +1,24 @@
+rules:
+  - id: github_dependabot_repo_x_ignore
+    enabled: true
+    description: "Ignore GitHub Dependabot alerts for repo-x"
+    match:
+      from_email: notifications@github.com
+      list_id: "owner/repo-x"
+      subject_contains_all:
+        - dependabot
+        - alert
+    action: ignore
+    source: manual
+
+  - id: urgent_bank_alerts
+    enabled: true
+    description: "Alert immediately on bank transaction emails"
+    match:
+      from_domain: alerts.bank.com
+      subject_contains_any:
+        - declined
+        - fraud
+        - unauthorized
+    action: alert_now
+    source: manual

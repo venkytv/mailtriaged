@@ -1,0 +1,242 @@
+package rules
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+type Action string
+
+const (
+	ActionAlertNow     Action = "alert_now"
+	ActionDailySummary Action = "daily_summary"
+	ActionIgnore       Action = "ignore"
+	ActionNeedsReview  Action = "needs_review"
+)
+
+var validActions = map[Action]bool{
+	ActionAlertNow:     true,
+	ActionDailySummary: true,
+	ActionIgnore:       true,
+	ActionNeedsReview:  true,
+}
+
+type Rule struct {
+	ID          string `yaml:"id"`
+	Enabled     *bool  `yaml:"enabled"`
+	Description string `yaml:"description"`
+	Match       Match  `yaml:"match"`
+	Action      Action `yaml:"action"`
+	Source      string `yaml:"source"`
+}
+
+func (r *Rule) IsEnabled() bool {
+	return r.Enabled == nil || *r.Enabled
+}
+
+type Match struct {
+	FromEmail         string            `yaml:"from_email"`
+	FromDomain        string            `yaml:"from_domain"`
+	ToContains        string            `yaml:"to_contains"`
+	CcContains        string            `yaml:"cc_contains"`
+	ListID            string            `yaml:"list_id"`
+	SubjectContainsAll []string          `yaml:"subject_contains_all"`
+	SubjectContainsAny []string          `yaml:"subject_contains_any"`
+	HeaderEquals      map[string]string `yaml:"header_equals"`
+	HeaderContains    map[string]string `yaml:"header_contains"`
+}
+
+func (m *Match) IsEmpty() bool {
+	return m.FromEmail == "" &&
+		m.FromDomain == "" &&
+		m.ToContains == "" &&
+		m.CcContains == "" &&
+		m.ListID == "" &&
+		len(m.SubjectContainsAll) == 0 &&
+		len(m.SubjectContainsAny) == 0 &&
+		len(m.HeaderEquals) == 0 &&
+		len(m.HeaderContains) == 0
+}
+
+type ruleFile struct {
+	Rules []Rule `yaml:"rules"`
+}
+
+func LoadDir(dir string) ([]Rule, error) {
+	pattern := filepath.Join(dir, "*.yaml")
+	files, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("globbing rules: %w", err)
+	}
+	sort.Strings(files)
+
+	var all []Rule
+	for _, f := range files {
+		rules, err := loadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("loading %s: %w", filepath.Base(f), err)
+		}
+		all = append(all, rules...)
+	}
+
+	return all, nil
+}
+
+func loadFile(path string) ([]Rule, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var rf ruleFile
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		return nil, fmt.Errorf("parsing: %w", err)
+	}
+
+	return rf.Rules, nil
+}
+
+func Validate(rules []Rule) error {
+	seen := make(map[string]bool)
+	for i, r := range rules {
+		if r.ID == "" {
+			return fmt.Errorf("rule %d: id is required", i)
+		}
+		if seen[r.ID] {
+			return fmt.Errorf("rule %d: duplicate id %q", i, r.ID)
+		}
+		seen[r.ID] = true
+
+		if !validActions[r.Action] {
+			return fmt.Errorf("rule %q: unsupported action %q", r.ID, r.Action)
+		}
+
+		if r.Match.IsEmpty() {
+			return fmt.Errorf("rule %q: match must have at least one condition", r.ID)
+		}
+	}
+	return nil
+}
+
+type Decision struct {
+	Action Action `json:"action"`
+	Source string `json:"source"`
+	RuleID string `json:"rule_id,omitempty"`
+	Reason string `json:"reason"`
+}
+
+func Evaluate(rules []Rule, msg MessageData) *Decision {
+	for _, r := range rules {
+		if !r.IsEnabled() {
+			continue
+		}
+		if matchRule(r.Match, msg) {
+			return &Decision{
+				Action: r.Action,
+				Source: "rule",
+				RuleID: r.ID,
+				Reason: "Matched active rule",
+			}
+		}
+	}
+	return nil
+}
+
+type MessageData struct {
+	FromEmail string
+	FromDomain string
+	To        []string
+	Cc        []string
+	Subject   string
+	ListID    string
+	Headers   map[string]string
+}
+
+func matchRule(m Match, msg MessageData) bool {
+	if m.FromEmail != "" {
+		if !strings.EqualFold(m.FromEmail, msg.FromEmail) {
+			return false
+		}
+	}
+
+	if m.FromDomain != "" {
+		if !strings.EqualFold(m.FromDomain, msg.FromDomain) {
+			return false
+		}
+	}
+
+	if m.ToContains != "" {
+		if !containsFold(msg.To, m.ToContains) {
+			return false
+		}
+	}
+
+	if m.CcContains != "" {
+		if !containsFold(msg.Cc, m.CcContains) {
+			return false
+		}
+	}
+
+	if m.ListID != "" {
+		if !strings.EqualFold(m.ListID, msg.ListID) {
+			return false
+		}
+	}
+
+	if len(m.SubjectContainsAll) > 0 {
+		subLower := strings.ToLower(msg.Subject)
+		for _, s := range m.SubjectContainsAll {
+			if !strings.Contains(subLower, strings.ToLower(s)) {
+				return false
+			}
+		}
+	}
+
+	if len(m.SubjectContainsAny) > 0 {
+		subLower := strings.ToLower(msg.Subject)
+		found := false
+		for _, s := range m.SubjectContainsAny {
+			if strings.Contains(subLower, strings.ToLower(s)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	if len(m.HeaderEquals) > 0 {
+		for k, v := range m.HeaderEquals {
+			hv, ok := msg.Headers[strings.ToLower(k)]
+			if !ok || !strings.EqualFold(hv, v) {
+				return false
+			}
+		}
+	}
+
+	if len(m.HeaderContains) > 0 {
+		for k, v := range m.HeaderContains {
+			hv, ok := msg.Headers[strings.ToLower(k)]
+			if !ok || !strings.Contains(strings.ToLower(hv), strings.ToLower(v)) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+func containsFold(list []string, target string) bool {
+	for _, s := range list {
+		if strings.EqualFold(s, target) {
+			return true
+		}
+	}
+	return false
+}
