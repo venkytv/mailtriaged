@@ -102,6 +102,18 @@ func (s *Store) IsMessageSeen(account, folder string, imapUID, uidValidity uint3
 	return count > 0, nil
 }
 
+func (s *Store) HighestUID(account, folder string, uidValidity uint32) (uint32, error) {
+	var uid uint32
+	err := s.db.QueryRow(
+		"SELECT COALESCE(MAX(imap_uid), 0) FROM messages WHERE account = ? AND folder = ? AND uid_validity = ?",
+		account, folder, uidValidity,
+	).Scan(&uid)
+	if err != nil {
+		return 0, err
+	}
+	return uid, nil
+}
+
 type DecisionRecord struct {
 	MessageID int64
 	Action    string

@@ -249,6 +249,42 @@ func TestSummaryQueue(t *testing.T) {
 	}
 }
 
+func TestHighestUID(t *testing.T) {
+	s := openTestDB(t)
+
+	uid, err := s.HighestUID("you@example.com", "INBOX", 1)
+	if err != nil {
+		t.Fatalf("querying empty: %v", err)
+	}
+	if uid != 0 {
+		t.Fatalf("expected 0 for empty table, got %d", uid)
+	}
+
+	s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 100, UIDValidity: 1,
+	})
+	s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 200, UIDValidity: 1,
+	})
+	s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 150, UIDValidity: 1,
+	})
+
+	uid, err = s.HighestUID("you@example.com", "INBOX", 1)
+	if err != nil {
+		t.Fatalf("querying: %v", err)
+	}
+	if uid != 200 {
+		t.Fatalf("expected 200, got %d", uid)
+	}
+
+	// Different UID validity should not see these messages
+	uid, _ = s.HighestUID("you@example.com", "INBOX", 2)
+	if uid != 0 {
+		t.Fatalf("expected 0 for different uid_validity, got %d", uid)
+	}
+}
+
 func TestInsertNotification(t *testing.T) {
 	s := openTestDB(t)
 
