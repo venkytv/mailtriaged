@@ -11,14 +11,15 @@ import (
 	"github.com/venky/mailtriaged/internal/config"
 	"github.com/venky/mailtriaged/internal/email"
 	"github.com/venky/mailtriaged/internal/rules"
+	"github.com/venky/mailtriaged/internal/store"
 )
 
 type Result struct {
-	Action    rules.Action `json:"action"`
-	Source    string       `json:"source"`
-	RuleID    string       `json:"rule_id,omitempty"`
-	Reason    string       `json:"reason"`
-	Summary   *string      `json:"summary,omitempty"`
+	Action     rules.Action    `json:"action"`
+	Source     string          `json:"source"`
+	RuleID     string          `json:"rule_id,omitempty"`
+	Reason     string          `json:"reason"`
+	Summary    *string         `json:"summary,omitempty"`
 	Classifier *ClassifierInfo `json:"classifier,omitempty"`
 }
 
@@ -39,6 +40,10 @@ func ClassifyFile(cfg *config.Config, rulesDir string, emlPath string, skipClass
 		return nil, fmt.Errorf("parsing eml: %w", err)
 	}
 
+	return ClassifyMessage(cfg, rulesDir, msg, skipClassifier, nil)
+}
+
+func ClassifyMessage(cfg *config.Config, rulesDir string, msg *email.Message, skipClassifier bool, db *store.Store) (*Result, error) {
 	ruleList, err := rules.LoadDir(rulesDir)
 	if err != nil {
 		return nil, fmt.Errorf("loading rules: %w", err)
@@ -48,38 +53,72 @@ func ClassifyFile(cfg *config.Config, rulesDir string, emlPath string, skipClass
 		return nil, fmt.Errorf("invalid rules: %w", err)
 	}
 
+	var msgID int64
+	if db != nil {
+		msgID, err = db.InsertMessage(&store.MessageRecord{
+			Account:    msg.Account,
+			Folder:     msg.Folder,
+			ImapUID:    msg.ImapUID,
+			MessageID:  msg.MessageID,
+			FromEmail:  msg.From.Email,
+			FromDomain: msg.From.Domain,
+			Subject:    msg.Subject,
+			ReceivedAt: msg.ReceivedAt,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("storing message: %w", err)
+		}
+	}
+
 	msgData := ToMessageData(msg)
 
 	if !cfg.Runtime.DisableRules {
 		if decision := rules.Evaluate(ruleList, msgData); decision != nil {
-			return &Result{
+			result := &Result{
 				Action: decision.Action,
 				Source: decision.Source,
 				RuleID: decision.RuleID,
 				Reason: decision.Reason,
-			}, nil
+			}
+			if db != nil {
+				logDecision(db, msgID, result)
+				db.InsertRuleHit(&store.RuleHitRecord{
+					RuleID:    decision.RuleID,
+					MessageID: msgID,
+					Action:    string(decision.Action),
+				})
+			}
+			return result, nil
 		}
 	}
 
 	if skipClassifier {
-		return &Result{
+		result := &Result{
 			Action: rules.ActionNeedsReview,
 			Source: "none",
 			Reason: "No rule matched; classifier skipped (dry-run)",
-		}, nil
+		}
+		if db != nil {
+			logDecision(db, msgID, result)
+		}
+		return result, nil
 	}
 
-	return invokeClassifier(cfg, rulesDir, msg)
+	return invokeClassifier(cfg, rulesDir, msg, db, msgID)
 }
 
-func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message) (*Result, error) {
+func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, db *store.Store, msgID int64) (*Result, error) {
 	req := classifier.BuildRequest(msg)
 
 	resp, record := classifier.Execute(cfg.Classifier.Command, req, cfg.Classifier.TimeoutSeconds)
 
+	if db != nil {
+		logClassifierCall(db, msgID, record)
+	}
+
 	if record.Err != nil {
 		log.Printf("classifier failed: %v (stderr: %s)", record.Err, record.Stderr)
-		return &Result{
+		result := &Result{
 			Action: rules.ActionNeedsReview,
 			Source: "classifier",
 			Reason: fmt.Sprintf("Classifier failed: %v", record.Err),
@@ -87,7 +126,15 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message) (
 				DurationMs: record.DurationMs,
 				Error:      record.Err.Error(),
 			},
-		}, nil
+		}
+		if db != nil {
+			logDecision(db, msgID, result)
+			db.InsertSummaryItem(&store.SummaryItemRecord{
+				MessageID: msgID,
+				Summary:   fmt.Sprintf("Classifier failed: %v", record.Err),
+			})
+		}
+		return result, nil
 	}
 
 	if resp.SuggestedRule != nil {
@@ -97,7 +144,7 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message) (
 		}
 	}
 
-	return &Result{
+	result := &Result{
 		Action:  resp.Action,
 		Source:  "classifier",
 		Reason:  resp.Reason,
@@ -105,7 +152,50 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message) (
 		Classifier: &ClassifierInfo{
 			DurationMs: record.DurationMs,
 		},
-	}, nil
+	}
+
+	if db != nil {
+		logDecision(db, msgID, result)
+		if resp.Action == rules.ActionDailySummary || resp.Action == rules.ActionNeedsReview {
+			summary := resp.Reason
+			if resp.Summary != nil {
+				summary = *resp.Summary
+			}
+			db.InsertSummaryItem(&store.SummaryItemRecord{
+				MessageID: msgID,
+				Summary:   summary,
+			})
+		}
+	}
+
+	return result, nil
+}
+
+func logDecision(db *store.Store, msgID int64, result *Result) {
+	if _, err := db.InsertDecision(&store.DecisionRecord{
+		MessageID: msgID,
+		Action:    string(result.Action),
+		Source:    result.Source,
+		RuleID:   result.RuleID,
+		Reason:   result.Reason,
+	}); err != nil {
+		log.Printf("failed to log decision: %v", err)
+	}
+}
+
+func logClassifierCall(db *store.Store, msgID int64, record *classifier.CallRecord) {
+	responseJSON := string(record.ResponseJSON)
+	if _, err := db.InsertClassifierCall(&store.ClassifierCallRecord{
+		MessageID:    msgID,
+		Command:      record.Command,
+		RequestJSON:  string(record.RequestJSON),
+		ResponseJSON: responseJSON,
+		ExitCode:     record.ExitCode,
+		Stderr:       record.Stderr,
+		DurationMs:   record.DurationMs,
+	}); err != nil {
+		log.Printf("failed to log classifier call: %v", err)
+	}
 }
 
 func ToMessageData(msg *email.Message) rules.MessageData {
