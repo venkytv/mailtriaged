@@ -61,11 +61,11 @@ func runStats(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Total messages:       %d\n", totalMsgs)
 	if totalMsgs > 0 {
 		fmt.Printf("  Matched by rules:   %-4d (%.0f%%)\n", rStats.TotalHits, pct(rStats.TotalHits, totalMsgs))
-		fmt.Printf("  Sent to classifier: %-4d (%.0f%%)\n", cStats.TotalCalls, pct(cStats.TotalCalls, totalMsgs))
+		fmt.Printf("  Sent to classifier: %-4d (%.0f%%)\n", cStats.DistinctMessages, pct(cStats.DistinctMessages, totalMsgs))
 	}
 
 	if cStats.TotalCalls > 0 {
-		fmt.Printf("\nClassifier\n")
+		fmt.Printf("\nClassifier (%d calls)\n", cStats.TotalCalls)
 		fmt.Printf("  Avg latency:        %.0f ms\n", cStats.AvgDurationMs)
 		fmt.Printf("  Avg confidence:     %.2f\n", cStats.AvgConfidence)
 		fmt.Printf("  Escalated:          %d (%.0f%%)\n", cStats.EscalatedCount, pct(cStats.EscalatedCount, cStats.TotalCalls))
@@ -123,9 +123,13 @@ func printVerboseDetails(db *store.Store) error {
 	if len(items) == 0 {
 		fmt.Printf("  (none)\n")
 	} else {
-		fmt.Printf("  %-35s %s\n", "From", "Subject")
+		fmt.Printf("  %-12s %-30s %s\n", "Date", "From", "Subject")
 		for _, item := range items {
-			fmt.Printf("  %-35s %s\n", truncate(item.FromEmail, 35), truncate(item.Subject, 60))
+			date := item.CreatedAt
+			if t, err := time.Parse(time.RFC3339, item.CreatedAt); err == nil {
+				date = t.Format("Jan 02 15:04")
+			}
+			fmt.Printf("  %-12s %-30s %s\n", date, truncate(item.FromEmail, 30), truncate(item.Subject, 55))
 		}
 	}
 

@@ -238,6 +238,16 @@ func TestSummaryQueue(t *testing.T) {
 		t.Errorf("action: got %q", items[0].Action)
 	}
 
+	// Duplicate insert should be a no-op while unsent
+	s.InsertSummaryItem(&SummaryItemRecord{
+		MessageID: msgID,
+		Summary:   "Duplicate attempt",
+	})
+	items, _ = s.UnsentSummaryItems()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 unsent item after duplicate insert, got %d", len(items))
+	}
+
 	err = s.MarkSummaryItemsSent([]int64{items[0].ID})
 	if err != nil {
 		t.Fatalf("marking sent: %v", err)
@@ -246,6 +256,48 @@ func TestSummaryQueue(t *testing.T) {
 	items, _ = s.UnsentSummaryItems()
 	if len(items) != 0 {
 		t.Fatalf("expected 0 unsent items after marking sent, got %d", len(items))
+	}
+
+	// After marking sent, a new insert for the same message should work
+	s.InsertSummaryItem(&SummaryItemRecord{
+		MessageID: msgID,
+		Summary:   "New summary after sent",
+	})
+	items, _ = s.UnsentSummaryItems()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 unsent item after re-insert, got %d", len(items))
+	}
+}
+
+func TestSummaryQueue_MultipleDecisions(t *testing.T) {
+	s := openTestDB(t)
+
+	msgID, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 100,
+		FromEmail: "sender@example.com", Subject: "Test",
+	})
+
+	s.InsertDecision(&DecisionRecord{
+		MessageID: msgID, Action: "daily_summary", Source: "classifier", Reason: "first attempt",
+	})
+	s.InsertDecision(&DecisionRecord{
+		MessageID: msgID, Action: "daily_summary", Source: "classifier", Reason: "retry",
+	})
+	s.InsertDecision(&DecisionRecord{
+		MessageID: msgID, Action: "daily_summary", Source: "classifier", Reason: "third try",
+	})
+
+	s.InsertSummaryItem(&SummaryItemRecord{MessageID: msgID, Summary: "test"})
+
+	items, err := s.UnsentSummaryItems()
+	if err != nil {
+		t.Fatalf("querying unsent items: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 unsent item despite 3 decisions, got %d", len(items))
+	}
+	if items[0].Reason != "third try" {
+		t.Errorf("expected latest decision reason, got %q", items[0].Reason)
 	}
 }
 
@@ -363,6 +415,9 @@ func TestGetClassifierStats(t *testing.T) {
 
 	if stats.TotalCalls != 2 {
 		t.Errorf("total_calls = %d, want 2", stats.TotalCalls)
+	}
+	if stats.DistinctMessages != 2 {
+		t.Errorf("distinct_messages = %d, want 2", stats.DistinctMessages)
 	}
 	if stats.ByModel["gpt-4o-mini"] != 1 {
 		t.Errorf("gpt-4o-mini count = %d", stats.ByModel["gpt-4o-mini"])

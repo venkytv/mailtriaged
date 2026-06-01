@@ -203,11 +203,12 @@ func (s *Store) InsertClassifierMetadata(m *ClassifierMetadataRecord) (int64, er
 }
 
 type ClassifierStats struct {
-	TotalCalls     int
-	ByModel        map[string]int
-	EscalatedCount int
-	AvgConfidence  float64
-	AvgDurationMs  float64
+	TotalCalls       int
+	DistinctMessages int
+	ByModel          map[string]int
+	EscalatedCount   int
+	AvgConfidence    float64
+	AvgDurationMs    float64
 }
 
 type RuleStats struct {
@@ -232,11 +233,11 @@ func (s *Store) GetClassifierStats(since string) (*ClassifierStats, error) {
 	}
 
 	row := s.db.QueryRow(
-		`SELECT COUNT(*), COALESCE(AVG(cc.duration_ms), 0)
+		`SELECT COUNT(*), COUNT(DISTINCT message_id), COALESCE(AVG(cc.duration_ms), 0)
 		 FROM classifier_calls cc
 		 WHERE cc.created_at >= ?`, since,
 	)
-	if err := row.Scan(&stats.TotalCalls, &stats.AvgDurationMs); err != nil {
+	if err := row.Scan(&stats.TotalCalls, &stats.DistinctMessages, &stats.AvgDurationMs); err != nil {
 		return nil, fmt.Errorf("querying total calls: %w", err)
 	}
 
@@ -349,11 +350,12 @@ type SummaryItemRecord struct {
 }
 
 func (s *Store) InsertSummaryItem(item *SummaryItemRecord) (int64, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.Exec(
 		`INSERT INTO summary_items (message_id, summary, created_at)
-		 VALUES (?, ?, ?)`,
-		item.MessageID, item.Summary,
-		time.Now().UTC().Format(time.RFC3339),
+		 SELECT ?, ?, ?
+		 WHERE NOT EXISTS (SELECT 1 FROM summary_items WHERE message_id = ? AND sent = 0)`,
+		item.MessageID, item.Summary, now, item.MessageID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("inserting summary item: %w", err)
@@ -380,6 +382,7 @@ func (s *Store) UnsentSummaryItems() ([]SummaryItemRow, error) {
 		 FROM summary_items si
 		 JOIN messages m ON m.id = si.message_id
 		 LEFT JOIN decisions d ON d.message_id = si.message_id
+		   AND d.id = (SELECT MAX(id) FROM decisions WHERE message_id = si.message_id)
 		 WHERE si.sent = 0
 		 ORDER BY si.created_at`,
 	)
