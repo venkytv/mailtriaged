@@ -87,13 +87,33 @@ func runRulesList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	grouped := make(map[rules.Action][]rules.Rule)
 	for _, r := range ruleList {
-		enabled := "enabled"
-		if !r.IsEnabled() {
-			enabled = "disabled"
-		}
-		fmt.Printf("%-40s %-15s %-10s %s\n", r.ID, r.Action, enabled, r.Description)
+		grouped[r.Action] = append(grouped[r.Action], r)
 	}
+
+	actionOrder := []rules.Action{
+		rules.ActionAlertNow,
+		rules.ActionDailySummary,
+		rules.ActionNeedsReview,
+		rules.ActionIgnore,
+	}
+
+	for _, action := range actionOrder {
+		group := grouped[action]
+		if len(group) == 0 {
+			continue
+		}
+		fmt.Printf("\n%s (%d)\n", action, len(group))
+		for _, r := range group {
+			if r.IsEnabled() {
+				fmt.Printf("  %-40s %s\n", r.ID, r.Description)
+			} else {
+				fmt.Printf("  %-40s %s (disabled)\n", r.ID, r.Description)
+			}
+		}
+	}
+	fmt.Println()
 	return nil
 }
 
