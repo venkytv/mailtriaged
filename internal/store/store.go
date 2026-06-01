@@ -203,18 +203,32 @@ func (s *Store) InsertClassifierMetadata(m *ClassifierMetadataRecord) (int64, er
 }
 
 type ClassifierStats struct {
-	TotalCalls      int
-	ByModel         map[string]int
-	EscalatedCount  int
-	AvgConfidence   float64
-	AvgDurationMs   float64
-	ActionBreakdown map[string]int
+	TotalCalls     int
+	ByModel        map[string]int
+	EscalatedCount int
+	AvgConfidence  float64
+	AvgDurationMs  float64
+}
+
+type RuleStats struct {
+	TotalHits int
+	ByRule    []RuleHitCount
+}
+
+type RuleHitCount struct {
+	RuleID string
+	Count  int
+}
+
+type ActionBreakdownRow struct {
+	Action          string
+	RuleCount       int
+	ClassifierCount int
 }
 
 func (s *Store) GetClassifierStats(since string) (*ClassifierStats, error) {
 	stats := &ClassifierStats{
-		ByModel:         make(map[string]int),
-		ActionBreakdown: make(map[string]int),
+		ByModel: make(map[string]int),
 	}
 
 	row := s.db.QueryRow(
@@ -269,26 +283,64 @@ func (s *Store) GetClassifierStats(since string) (*ClassifierStats, error) {
 		return nil, fmt.Errorf("querying avg confidence: %w", err)
 	}
 
-	actionRows, err := s.db.Query(
-		`SELECT COALESCE(d.action, 'unknown'), COUNT(*)
-		 FROM classifier_calls cc
-		 JOIN decisions d ON d.message_id = cc.message_id AND d.source = 'classifier'
-		 WHERE cc.created_at >= ?
-		 GROUP BY d.action`, since,
+	return stats, nil
+}
+
+func (s *Store) GetRuleStats(since string) (*RuleStats, error) {
+	stats := &RuleStats{}
+
+	row := s.db.QueryRow(`SELECT COUNT(*) FROM rule_hits WHERE hit_at >= ?`, since)
+	if err := row.Scan(&stats.TotalHits); err != nil {
+		return nil, fmt.Errorf("querying rule hit count: %w", err)
+	}
+
+	rows, err := s.db.Query(
+		`SELECT rule_id, COUNT(*) as cnt FROM rule_hits WHERE hit_at >= ? GROUP BY rule_id ORDER BY cnt DESC`, since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying rule breakdown: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ruleID string
+		var count int
+		if err := rows.Scan(&ruleID, &count); err != nil {
+			return nil, err
+		}
+		stats.ByRule = append(stats.ByRule, RuleHitCount{RuleID: ruleID, Count: count})
+	}
+	return stats, rows.Err()
+}
+
+func (s *Store) GetTotalMessages(since string) (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE seen_at >= ?`, since).Scan(&count)
+	return count, err
+}
+
+func (s *Store) GetActionBreakdown(since string) ([]ActionBreakdownRow, error) {
+	rows, err := s.db.Query(
+		`SELECT action,
+		        SUM(CASE WHEN source = 'rule' THEN 1 ELSE 0 END),
+		        SUM(CASE WHEN source = 'classifier' THEN 1 ELSE 0 END)
+		 FROM decisions
+		 WHERE created_at >= ?
+		 GROUP BY action
+		 ORDER BY COUNT(*) DESC`, since,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying action breakdown: %w", err)
 	}
-	defer actionRows.Close()
-	for actionRows.Next() {
-		var action string
-		var count int
-		if err := actionRows.Scan(&action, &count); err != nil {
+	defer rows.Close()
+	var result []ActionBreakdownRow
+	for rows.Next() {
+		var r ActionBreakdownRow
+		if err := rows.Scan(&r.Action, &r.RuleCount, &r.ClassifierCount); err != nil {
 			return nil, err
 		}
-		stats.ActionBreakdown[action] = count
+		result = append(result, r)
 	}
-	return stats, actionRows.Err()
+	return result, rows.Err()
 }
 
 type SummaryItemRecord struct {

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -9,7 +10,10 @@ import (
 	"github.com/venky/mailtriaged/internal/store"
 )
 
-var statsDays int
+var (
+	statsDays    int
+	statsVerbose bool
+)
 
 var statsCmd = &cobra.Command{
 	Use:   "stats",
@@ -19,6 +23,7 @@ var statsCmd = &cobra.Command{
 
 func init() {
 	statsCmd.Flags().IntVar(&statsDays, "days", 7, "number of days to look back")
+	statsCmd.Flags().BoolVarP(&statsVerbose, "verbose", "v", false, "show debug details (pending summary queue, etc.)")
 	rootCmd.AddCommand(statsCmd)
 }
 
@@ -30,35 +35,113 @@ func runStats(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	since := time.Now().UTC().AddDate(0, 0, -statsDays).Format(time.RFC3339)
-	stats, err := db.GetClassifierStats(since)
+
+	totalMsgs, err := db.GetTotalMessages(since)
 	if err != nil {
-		return fmt.Errorf("querying stats: %w", err)
+		return fmt.Errorf("querying total messages: %w", err)
 	}
 
-	fmt.Printf("Classifier stats (last %d days)\n", statsDays)
+	cStats, err := db.GetClassifierStats(since)
+	if err != nil {
+		return fmt.Errorf("querying classifier stats: %w", err)
+	}
+
+	rStats, err := db.GetRuleStats(since)
+	if err != nil {
+		return fmt.Errorf("querying rule stats: %w", err)
+	}
+
+	actions, err := db.GetActionBreakdown(since)
+	if err != nil {
+		return fmt.Errorf("querying action breakdown: %w", err)
+	}
+
+	fmt.Printf("Triage stats (last %d days)\n", statsDays)
 	fmt.Printf("─────────────────────────────────\n")
-	fmt.Printf("Total calls:        %d\n", stats.TotalCalls)
-	fmt.Printf("Avg latency:        %.0f ms\n", stats.AvgDurationMs)
-	fmt.Printf("Avg confidence:     %.2f\n", stats.AvgConfidence)
-	fmt.Printf("Escalated to fallback: %d", stats.EscalatedCount)
-	if stats.TotalCalls > 0 {
-		fmt.Printf(" (%.0f%%)", float64(stats.EscalatedCount)/float64(stats.TotalCalls)*100)
+	fmt.Printf("Total messages:       %d\n", totalMsgs)
+	if totalMsgs > 0 {
+		fmt.Printf("  Matched by rules:   %-4d (%.0f%%)\n", rStats.TotalHits, pct(rStats.TotalHits, totalMsgs))
+		fmt.Printf("  Sent to classifier: %-4d (%.0f%%)\n", cStats.TotalCalls, pct(cStats.TotalCalls, totalMsgs))
 	}
-	fmt.Println()
 
-	if len(stats.ByModel) > 0 {
-		fmt.Printf("\nBy model:\n")
-		for model, count := range stats.ByModel {
-			fmt.Printf("  %-20s %d\n", model, count)
+	if cStats.TotalCalls > 0 {
+		fmt.Printf("\nClassifier\n")
+		fmt.Printf("  Avg latency:        %.0f ms\n", cStats.AvgDurationMs)
+		fmt.Printf("  Avg confidence:     %.2f\n", cStats.AvgConfidence)
+		fmt.Printf("  Escalated:          %d (%.0f%%)\n", cStats.EscalatedCount, pct(cStats.EscalatedCount, cStats.TotalCalls))
+
+		if len(cStats.ByModel) > 0 {
+			fmt.Printf("  By model:\n")
+			for model, count := range cStats.ByModel {
+				fmt.Printf("    %-20s %d\n", model, count)
+			}
 		}
 	}
 
-	if len(stats.ActionBreakdown) > 0 {
+	if len(actions) > 0 {
 		fmt.Printf("\nBy action:\n")
-		for action, count := range stats.ActionBreakdown {
-			fmt.Printf("  %-20s %d\n", action, count)
+		for _, a := range actions {
+			total := a.RuleCount + a.ClassifierCount
+			var sources []string
+			if a.RuleCount > 0 {
+				sources = append(sources, fmt.Sprintf("rules: %d", a.RuleCount))
+			}
+			if a.ClassifierCount > 0 {
+				sources = append(sources, fmt.Sprintf("classifier: %d", a.ClassifierCount))
+			}
+			if len(sources) == 1 {
+				fmt.Printf("  %-20s %d\n", a.Action, total)
+			} else {
+				fmt.Printf("  %-20s %-4d (%s)\n", a.Action, total, strings.Join(sources, ", "))
+			}
+		}
+	}
+
+	if len(rStats.ByRule) > 0 {
+		fmt.Printf("\nTop rules:\n")
+		for _, r := range rStats.ByRule {
+			fmt.Printf("  %-20s %d\n", r.RuleID, r.Count)
+		}
+	}
+
+	if statsVerbose {
+		if err := printVerboseDetails(db); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+func printVerboseDetails(db *store.Store) error {
+	items, err := db.UnsentSummaryItems()
+	if err != nil {
+		return fmt.Errorf("querying pending summary: %w", err)
+	}
+
+	fmt.Printf("\nPending daily summary (%d unsent):\n", len(items))
+	if len(items) == 0 {
+		fmt.Printf("  (none)\n")
+	} else {
+		fmt.Printf("  %-35s %s\n", "From", "Subject")
+		for _, item := range items {
+			fmt.Printf("  %-35s %s\n", truncate(item.FromEmail, 35), truncate(item.Subject, 60))
+		}
+	}
+
+	return nil
+}
+
+func pct(n, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(n) / float64(total) * 100
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-1] + "…"
 }

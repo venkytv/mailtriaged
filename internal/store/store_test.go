@@ -376,11 +376,119 @@ func TestGetClassifierStats(t *testing.T) {
 	if stats.AvgDurationMs != 300 {
 		t.Errorf("avg_duration = %f, want 300", stats.AvgDurationMs)
 	}
-	if stats.ActionBreakdown["ignore"] != 1 {
-		t.Errorf("ignore count = %d", stats.ActionBreakdown["ignore"])
+}
+
+func TestGetActionBreakdown(t *testing.T) {
+	s := openTestDB(t)
+
+	msgID, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 100,
+	})
+	s.InsertDecision(&DecisionRecord{
+		MessageID: msgID, Action: "ignore", Source: "rule", RuleID: "test-rule", Reason: "matched",
+	})
+
+	msgID2, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 101,
+	})
+	s.InsertDecision(&DecisionRecord{
+		MessageID: msgID2, Action: "ignore", Source: "classifier", Reason: "test",
+	})
+
+	msgID3, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 102,
+	})
+	s.InsertDecision(&DecisionRecord{
+		MessageID: msgID3, Action: "daily_summary", Source: "classifier", Reason: "test",
+	})
+
+	actions, err := s.GetActionBreakdown("2000-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("getting action breakdown: %v", err)
 	}
-	if stats.ActionBreakdown["daily_summary"] != 1 {
-		t.Errorf("daily_summary count = %d", stats.ActionBreakdown["daily_summary"])
+
+	actionMap := make(map[string]ActionBreakdownRow)
+	for _, a := range actions {
+		actionMap[a.Action] = a
+	}
+
+	if row, ok := actionMap["ignore"]; !ok {
+		t.Error("missing ignore action")
+	} else {
+		if row.RuleCount != 1 {
+			t.Errorf("ignore rule count = %d, want 1", row.RuleCount)
+		}
+		if row.ClassifierCount != 1 {
+			t.Errorf("ignore classifier count = %d, want 1", row.ClassifierCount)
+		}
+	}
+
+	if row, ok := actionMap["daily_summary"]; !ok {
+		t.Error("missing daily_summary action")
+	} else {
+		if row.ClassifierCount != 1 {
+			t.Errorf("daily_summary classifier count = %d, want 1", row.ClassifierCount)
+		}
+	}
+}
+
+func TestGetRuleStats(t *testing.T) {
+	s := openTestDB(t)
+
+	msgID, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 100,
+	})
+	s.InsertRuleHit(&RuleHitRecord{RuleID: "github-dependabot", MessageID: msgID, Action: "ignore"})
+
+	msgID2, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 101,
+	})
+	s.InsertRuleHit(&RuleHitRecord{RuleID: "github-dependabot", MessageID: msgID2, Action: "ignore"})
+
+	msgID3, _ := s.InsertMessage(&MessageRecord{
+		Account: "you@example.com", Folder: "INBOX", ImapUID: 102,
+	})
+	s.InsertRuleHit(&RuleHitRecord{RuleID: "marketing-ignore", MessageID: msgID3, Action: "ignore"})
+
+	stats, err := s.GetRuleStats("2000-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("getting rule stats: %v", err)
+	}
+
+	if stats.TotalHits != 3 {
+		t.Errorf("total hits = %d, want 3", stats.TotalHits)
+	}
+	if len(stats.ByRule) != 2 {
+		t.Fatalf("expected 2 rules, got %d", len(stats.ByRule))
+	}
+	if stats.ByRule[0].RuleID != "github-dependabot" || stats.ByRule[0].Count != 2 {
+		t.Errorf("first rule: got %s=%d, want github-dependabot=2", stats.ByRule[0].RuleID, stats.ByRule[0].Count)
+	}
+	if stats.ByRule[1].RuleID != "marketing-ignore" || stats.ByRule[1].Count != 1 {
+		t.Errorf("second rule: got %s=%d, want marketing-ignore=1", stats.ByRule[1].RuleID, stats.ByRule[1].Count)
+	}
+}
+
+func TestGetTotalMessages(t *testing.T) {
+	s := openTestDB(t)
+
+	count, err := s.GetTotalMessages("2000-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("querying empty: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+
+	s.InsertMessage(&MessageRecord{Account: "you@example.com", Folder: "INBOX", ImapUID: 100})
+	s.InsertMessage(&MessageRecord{Account: "you@example.com", Folder: "INBOX", ImapUID: 101})
+
+	count, err = s.GetTotalMessages("2000-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("querying: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2, got %d", count)
 	}
 }
 
