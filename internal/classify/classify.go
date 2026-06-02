@@ -147,9 +147,15 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, d
 	}
 
 	if resp.SuggestedRule != nil {
-		candidatesPath := filepath.Join(rulesDir, "800-llm-candidates.yaml")
-		if err := classifier.AppendCandidate(candidatesPath, resp.SuggestedRule, msg.MessageID, resp.Reason); err != nil {
-			log.Printf("failed to append candidate rule: %v", err)
+		ruleList, _ := rules.LoadDir(rulesDir)
+		sm := resp.SuggestedRule.Match
+		if rules.HasSenderRule(ruleList, sm.FromEmail, sm.FromDomain, resp.Action) {
+			log.Printf("skipping candidate: active rule already covers sender %q with action %s", sm.FromEmail, resp.Action)
+		} else {
+			candidatesPath := filepath.Join(rulesDir, "800-llm-candidates.yaml")
+			if err := classifier.AppendCandidate(candidatesPath, resp.SuggestedRule, msg.MessageID, resp.Reason); err != nil {
+				log.Printf("failed to append candidate rule: %v", err)
+			}
 		}
 	}
 

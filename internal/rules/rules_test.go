@@ -240,6 +240,60 @@ func TestLoadDir(t *testing.T) {
 	}
 }
 
+func TestHasSenderRule_ExactEmail(t *testing.T) {
+	ruleList := []Rule{
+		{ID: "r1", Action: ActionIgnore, Match: Match{FromEmail: "a@example.com"}},
+	}
+	if !HasSenderRule(ruleList, "a@example.com", "", ActionIgnore) {
+		t.Fatal("expected match on exact email + same action")
+	}
+	if HasSenderRule(ruleList, "a@example.com", "", ActionAlertNow) {
+		t.Fatal("expected no match on same email + different action")
+	}
+	if HasSenderRule(ruleList, "b@example.com", "", ActionIgnore) {
+		t.Fatal("expected no match on different email")
+	}
+}
+
+func TestHasSenderRule_DomainCoversEmail(t *testing.T) {
+	ruleList := []Rule{
+		{ID: "r1", Action: ActionIgnore, Match: Match{FromDomain: "example.com"}},
+	}
+	if !HasSenderRule(ruleList, "a@example.com", "", ActionIgnore) {
+		t.Fatal("expected domain rule to cover email")
+	}
+	if HasSenderRule(ruleList, "a@other.com", "", ActionIgnore) {
+		t.Fatal("expected no match on different domain")
+	}
+}
+
+func TestHasSenderRule_DomainMatch(t *testing.T) {
+	ruleList := []Rule{
+		{ID: "r1", Action: ActionDailySummary, Match: Match{FromDomain: "example.com"}},
+	}
+	if !HasSenderRule(ruleList, "", "example.com", ActionDailySummary) {
+		t.Fatal("expected domain match")
+	}
+}
+
+func TestHasSenderRule_DisabledSkipped(t *testing.T) {
+	ruleList := []Rule{
+		{ID: "r1", Enabled: boolPtr(false), Action: ActionIgnore, Match: Match{FromEmail: "a@example.com"}},
+	}
+	if HasSenderRule(ruleList, "a@example.com", "", ActionIgnore) {
+		t.Fatal("disabled rule should be skipped")
+	}
+}
+
+func TestHasSenderRule_CaseInsensitive(t *testing.T) {
+	ruleList := []Rule{
+		{ID: "r1", Action: ActionIgnore, Match: Match{FromEmail: "A@Example.COM"}},
+	}
+	if !HasSenderRule(ruleList, "a@example.com", "", ActionIgnore) {
+		t.Fatal("expected case-insensitive match")
+	}
+}
+
 func writeYAML(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {

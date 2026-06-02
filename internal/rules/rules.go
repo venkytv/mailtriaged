@@ -244,3 +244,26 @@ func containsFold(list []string, target string) bool {
 	}
 	return false
 }
+
+func HasSenderRule(ruleList []Rule, fromEmail, fromDomain string, action Action) bool {
+	for _, r := range ruleList {
+		if !r.IsEnabled() || r.Action != action {
+			continue
+		}
+		if fromEmail != "" && r.Match.FromEmail != "" &&
+			strings.EqualFold(r.Match.FromEmail, fromEmail) {
+			return true
+		}
+		if fromDomain != "" && r.Match.FromDomain != "" &&
+			strings.EqualFold(r.Match.FromDomain, fromDomain) {
+			return true
+		}
+		if fromEmail != "" && r.Match.FromDomain != "" {
+			parts := strings.SplitN(fromEmail, "@", 2)
+			if len(parts) == 2 && strings.EqualFold(r.Match.FromDomain, parts[1]) {
+				return true
+			}
+		}
+	}
+	return false
+}
