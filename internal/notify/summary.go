@@ -11,11 +11,16 @@ import (
 	"github.com/venky/mailtriaged/internal/telegram"
 )
 
+// Summarizer generates a summary message from a list of items.
+// If nil, FormatSummary is used as the fallback.
+type Summarizer func(items []store.SummaryItemRow) (string, error)
+
 type SummaryScheduler struct {
-	tg       *telegram.Client
-	db       *store.Store
-	sendTime string // "HH:MM"
-	location *time.Location
+	tg         *telegram.Client
+	db         *store.Store
+	sendTime   string // "HH:MM"
+	location   *time.Location
+	summarizer Summarizer
 }
 
 func NewSummaryScheduler(tg *telegram.Client, db *store.Store, sendTime, timezone string) (*SummaryScheduler, error) {
@@ -29,6 +34,10 @@ func NewSummaryScheduler(tg *telegram.Client, db *store.Store, sendTime, timezon
 		sendTime: sendTime,
 		location: loc,
 	}, nil
+}
+
+func (s *SummaryScheduler) SetSummarizer(fn Summarizer) {
+	s.summarizer = fn
 }
 
 // Run starts the daily summary scheduler. It blocks until ctx is cancelled.
@@ -61,6 +70,36 @@ func (s *SummaryScheduler) SendNow() error {
 		return nil
 	}
 
+	if s.summarizer != nil {
+		return s.sendWithSummarizer(items)
+	}
+	return s.sendWithFormatting(items)
+}
+
+func (s *SummaryScheduler) sendWithSummarizer(items []store.SummaryItemRow) error {
+	text, err := s.summarizer(items)
+	if err != nil {
+		log.Printf("summarizer failed, falling back to formatted summary: %v", err)
+		return s.sendWithFormatting(items)
+	}
+
+	if err := s.tg.SendMessage(text); err != nil {
+		return fmt.Errorf("sending summary: %w", err)
+	}
+
+	ids := make([]int64, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+	}
+	if err := s.db.MarkSummaryItemsSent(ids); err != nil {
+		return fmt.Errorf("marking items sent: %w", err)
+	}
+
+	log.Printf("daily summary: sent %d items via summarizer", len(items))
+	return nil
+}
+
+func (s *SummaryScheduler) sendWithFormatting(items []store.SummaryItemRow) error {
 	chunks := splitSummaryChunks(items)
 	totalSent := 0
 	for _, chunk := range chunks {

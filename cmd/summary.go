@@ -53,6 +53,7 @@ func runSummarySend(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	sched.SetSummarizer(buildSummarizer(cfg))
 
 	return sched.SendNow()
 }

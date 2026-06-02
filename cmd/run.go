@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/venky/mailtriaged/internal/classifier"
 	"github.com/venky/mailtriaged/internal/config"
 	"github.com/venky/mailtriaged/internal/email"
 	imapwatch "github.com/venky/mailtriaged/internal/imap"
@@ -88,6 +89,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("creating summary scheduler: %w", err)
 		}
+		sched.SetSummarizer(buildSummarizer(cfg))
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -125,6 +127,21 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	wg.Wait()
 	log.Println("stopped")
 	return nil
+}
+
+func buildSummarizer(cfg *config.Config) notify.Summarizer {
+	return func(items []store.SummaryItemRow) (string, error) {
+		cItems := make([]classifier.SummarizeItem, len(items))
+		for i, item := range items {
+			cItems[i] = classifier.SummarizeItem{
+				From:    item.FromEmail,
+				Subject: item.Subject,
+				Summary: item.Summary,
+				Action:  item.Action,
+			}
+		}
+		return classifier.Summarize(cfg.Classifier.Command, cItems, cfg.Classifier.TimeoutSeconds)
+	}
 }
 
 func stateDBPath() string {

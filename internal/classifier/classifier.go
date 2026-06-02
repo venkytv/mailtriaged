@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/venky/mailtriaged/internal/email"
@@ -200,4 +201,35 @@ func validateSuggestedMatch(m *rules.Match) error {
 		return fmt.Errorf("suggested rule match is empty")
 	}
 	return nil
+}
+
+type SummarizeItem struct {
+	From    string `json:"from"`
+	Subject string `json:"subject"`
+	Summary string `json:"summary"`
+	Action  string `json:"action"`
+}
+
+func Summarize(command []string, items []SummarizeItem, timeoutSecs int) (string, error) {
+	input, err := json.Marshal(items)
+	if err != nil {
+		return "", fmt.Errorf("marshaling summarize input: %w", err)
+	}
+
+	args := append(append([]string{}, command[1:]...), "--summarize")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSecs)*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, command[0], args...)
+	cmd.Stdin = bytes.NewReader(input)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("summarizer failed: %w (stderr: %s)", err, stderr.String())
+	}
+
+	return strings.TrimSpace(stdout.String()), nil
 }

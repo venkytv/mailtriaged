@@ -107,8 +107,8 @@ type match struct {
 type chatRequest struct {
 	Model      string       `json:"model"`
 	Messages   []chatMsg    `json:"messages"`
-	Tools      []toolDef    `json:"tools"`
-	ToolChoice any          `json:"tool_choice"`
+	Tools      []toolDef    `json:"tools,omitempty"`
+	ToolChoice any          `json:"tool_choice,omitempty"`
 }
 
 type chatMsg struct {
@@ -170,6 +170,7 @@ func main() {
 	apiKeyCmd := flag.String("api-key-command", "", "shell command to retrieve API key (alternative to OPENAI_API_KEY env)")
 	baseURL := flag.String("base-url", "https://api.openai.com/v1", "OpenAI-compatible API base URL")
 	verbose := flag.Bool("verbose", false, "print debug info to stderr")
+	summarize := flag.Bool("summarize", false, "summarize a list of emails into a brief conversational overview")
 	flag.Parse()
 
 	apiKey, err := resolveAPIKey(*apiKeyCmd)
@@ -180,6 +181,11 @@ func main() {
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fatal("reading stdin: %v", err)
+	}
+
+	if *summarize {
+		runSummarize(apiKey, *model, *baseURL, input)
+		return
 	}
 
 	var req request
@@ -454,6 +460,104 @@ func callOpenAI(apiKey, model, baseURL, systemPrompt, userPrompt string) (*class
 	}
 
 	return &result, nil
+}
+
+// --- summarize mode ---
+
+type summarizeItem struct {
+	From    string `json:"from"`
+	Subject string `json:"subject"`
+	Summary string `json:"summary"`
+	Action  string `json:"action"`
+}
+
+type summarizeChatResponse struct {
+	Choices []summarizeChatChoice `json:"choices"`
+	Error   *apiError             `json:"error,omitempty"`
+}
+
+type summarizeChatChoice struct {
+	Message struct {
+		Content string `json:"content"`
+	} `json:"message"`
+}
+
+func runSummarize(apiKey, model, baseURL string, input []byte) {
+	var items []summarizeItem
+	if err := json.Unmarshal(input, &items); err != nil {
+		fatal("parsing summarize input: %v", err)
+	}
+
+	if len(items) == 0 {
+		fmt.Println("No emails to summarize.")
+		return
+	}
+
+	var userMsg strings.Builder
+	for _, item := range items {
+		fmt.Fprintf(&userMsg, "- From: %s | Subject: %s | Summary: %s | Action: %s\n",
+			item.From, item.Subject, item.Summary, item.Action)
+	}
+
+	systemPrompt := `You summarize a batch of triaged emails into a brief, conversational daily digest.
+
+Rules:
+- Group similar emails together naturally (e.g. "3 Synology backup notifications", "a Dracula Daily letter", "receipts from Tailscale and Apple")
+- needs_review items should be called out first, clearly, since they need the user's attention
+- Keep the whole summary to 2-4 sentences
+- Write casually, like telling a friend what arrived in their inbox
+- Don't use bullet points or headers — just flowing text
+- Don't mention email addresses, just the recognizable sender name or service
+- Start directly with the content, no preamble like "Here's your summary"`
+
+	body := chatRequest{
+		Model: model,
+		Messages: []chatMsg{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userMsg.String()},
+		},
+	}
+
+	reqJSON, err := json.Marshal(body)
+	if err != nil {
+		fatal("marshaling summarize request: %v", err)
+	}
+
+	url := strings.TrimRight(baseURL, "/") + "/chat/completions"
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(reqJSON))
+	if err != nil {
+		fatal("creating request: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	httpResp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		fatal("summarize API request failed: %v", err)
+	}
+	defer httpResp.Body.Close()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		fatal("reading summarize response: %v", err)
+	}
+
+	if httpResp.StatusCode != 200 {
+		fatal("summarize API error (HTTP %d): %s", httpResp.StatusCode, string(respBody))
+	}
+
+	var chatResp summarizeChatResponse
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		fatal("parsing summarize response: %v", err)
+	}
+	if chatResp.Error != nil {
+		fatal("summarize API error: %s", chatResp.Error.Message)
+	}
+	if len(chatResp.Choices) == 0 {
+		fatal("summarize API returned no choices")
+	}
+
+	fmt.Print(chatResp.Choices[0].Message.Content)
 }
 
 func toResponse(r *classifyResult, model string, escalated bool) *response {
