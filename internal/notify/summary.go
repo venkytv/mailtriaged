@@ -61,21 +61,25 @@ func (s *SummaryScheduler) SendNow() error {
 		return nil
 	}
 
-	text := FormatSummary(items)
+	chunks := splitSummaryChunks(items)
+	totalSent := 0
+	for _, chunk := range chunks {
+		text := FormatSummary(chunk)
+		if err := s.tg.SendMessage(text); err != nil {
+			return fmt.Errorf("sending summary (sent %d/%d items): %w", totalSent, len(items), err)
+		}
 
-	if err := s.tg.SendMessage(text); err != nil {
-		return fmt.Errorf("sending summary: %w", err)
+		ids := make([]int64, len(chunk))
+		for i, item := range chunk {
+			ids[i] = item.ID
+		}
+		if err := s.db.MarkSummaryItemsSent(ids); err != nil {
+			return fmt.Errorf("marking items sent: %w", err)
+		}
+		totalSent += len(chunk)
 	}
 
-	ids := make([]int64, len(items))
-	for i, item := range items {
-		ids[i] = item.ID
-	}
-	if err := s.db.MarkSummaryItemsSent(ids); err != nil {
-		return fmt.Errorf("marking items sent: %w", err)
-	}
-
-	log.Printf("daily summary: sent %d items", len(items))
+	log.Printf("daily summary: sent %d items in %d messages", len(items), len(chunks))
 	return nil
 }
 
@@ -96,36 +100,106 @@ func parseSendTime(s string) (hour, min int) {
 	return
 }
 
+const telegramMaxMessageLen = 4096
+
+func splitSummaryChunks(items []store.SummaryItemRow) [][]store.SummaryItemRow {
+	if len(items) == 0 {
+		return nil
+	}
+	if len(FormatSummary(items)) <= telegramMaxMessageLen {
+		return [][]store.SummaryItemRow{items}
+	}
+
+	var chunks [][]store.SummaryItemRow
+	remaining := items
+	for len(remaining) > 0 {
+		hi := len(remaining)
+		lo := 1
+		for lo < hi {
+			mid := (lo + hi + 1) / 2
+			if len(FormatSummary(remaining[:mid])) <= telegramMaxMessageLen {
+				lo = mid
+			} else {
+				hi = mid - 1
+			}
+		}
+		chunks = append(chunks, remaining[:lo])
+		remaining = remaining[lo:]
+	}
+	return chunks
+}
+
+type consolidatedItem struct {
+	FromEmail string
+	Subject   string
+	Summary   string
+	Count     int
+}
+
+func consolidateItems(items []store.SummaryItemRow) []consolidatedItem {
+	type groupKey struct{ from, summary string }
+	var keys []groupKey
+	groups := make(map[groupKey]*consolidatedItem)
+
+	for _, item := range items {
+		k := groupKey{item.FromEmail, item.Summary}
+		if g, ok := groups[k]; ok {
+			g.Count++
+		} else {
+			keys = append(keys, k)
+			groups[k] = &consolidatedItem{
+				FromEmail: item.FromEmail,
+				Subject:   item.Subject,
+				Summary:   item.Summary,
+				Count:     1,
+			}
+		}
+	}
+
+	result := make([]consolidatedItem, len(keys))
+	for i, k := range keys {
+		result[i] = *groups[k]
+	}
+	return result
+}
+
+func formatConsolidatedItem(b *strings.Builder, item consolidatedItem, labelSummary string) {
+	if item.Count > 1 {
+		fmt.Fprintf(b, "• %s ×%d\n  %s: %s\n",
+			escapeMarkdown(item.FromEmail), item.Count,
+			labelSummary, escapeMarkdown(item.Summary))
+	} else {
+		fmt.Fprintf(b, "• %s\n  Subject: %s\n  %s: %s\n",
+			escapeMarkdown(item.FromEmail),
+			escapeMarkdown(item.Subject),
+			labelSummary, escapeMarkdown(item.Summary))
+	}
+}
+
 func FormatSummary(items []store.SummaryItemRow) string {
-	var needsReview, summary []store.SummaryItemRow
+	var needsReviewItems, summaryItems []store.SummaryItemRow
 	for _, item := range items {
 		if item.Action == "needs_review" {
-			needsReview = append(needsReview, item)
+			needsReviewItems = append(needsReviewItems, item)
 		} else {
-			summary = append(summary, item)
+			summaryItems = append(summaryItems, item)
 		}
 	}
 
 	var b strings.Builder
 	b.WriteString("*Daily mail summary*\n")
 
-	if len(needsReview) > 0 {
+	if len(needsReviewItems) > 0 {
 		b.WriteString("\n*Needs review*\n")
-		for _, item := range needsReview {
-			fmt.Fprintf(&b, "• From: %s\n  Subject: %s\n  Reason: %s\n",
-				escapeMarkdown(item.FromEmail),
-				escapeMarkdown(item.Subject),
-				escapeMarkdown(item.Summary))
+		for _, item := range consolidateItems(needsReviewItems) {
+			formatConsolidatedItem(&b, item, "Reason")
 		}
 	}
 
-	if len(summary) > 0 {
+	if len(summaryItems) > 0 {
 		b.WriteString("\n*Summary*\n")
-		for _, item := range summary {
-			fmt.Fprintf(&b, "• From: %s\n  Subject: %s\n  Summary: %s\n",
-				escapeMarkdown(item.FromEmail),
-				escapeMarkdown(item.Subject),
-				escapeMarkdown(item.Summary))
+		for _, item := range consolidateItems(summaryItems) {
+			formatConsolidatedItem(&b, item, "Summary")
 		}
 	}
 

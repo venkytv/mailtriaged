@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/venky/mailtriaged/internal/email"
@@ -78,10 +79,81 @@ func TestFormatSummary(t *testing.T) {
 	}
 }
 
+func TestFormatSummary_Consolidated(t *testing.T) {
+	items := []store.SummaryItemRow{
+		{ID: 1, FromEmail: "backup@nas.local", Subject: "Backup May 31", Summary: "backup success", Action: "daily_summary"},
+		{ID: 2, FromEmail: "backup@nas.local", Subject: "Backup Jun 01", Summary: "backup success", Action: "daily_summary"},
+		{ID: 3, FromEmail: "backup@nas.local", Subject: "Backup Jun 02", Summary: "backup success", Action: "daily_summary"},
+		{ID: 4, FromEmail: "news@example.com", Subject: "Weekly digest", Summary: "newsletter", Action: "daily_summary"},
+	}
+
+	text := FormatSummary(items)
+
+	if !contains(text, "×3") {
+		t.Errorf("expected consolidated count ×3 in output:\n%s", text)
+	}
+	if contains(text, "Backup May 31") || contains(text, "Backup Jun 01") {
+		t.Errorf("consolidated items should not show individual subjects:\n%s", text)
+	}
+	if !contains(text, "Weekly digest") {
+		t.Errorf("non-consolidated item should still show subject:\n%s", text)
+	}
+}
+
 func TestFormatSummary_Empty(t *testing.T) {
 	text := FormatSummary(nil)
 	if !contains(text, "Daily mail summary") {
 		t.Error("expected header even for empty summary")
+	}
+}
+
+func TestSplitSummaryChunks_SmallFitsInOne(t *testing.T) {
+	items := []store.SummaryItemRow{
+		{ID: 1, FromEmail: "a@b.com", Subject: "Hi", Summary: "test", Action: "daily_summary"},
+	}
+	chunks := splitSummaryChunks(items)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if len(chunks[0]) != 1 {
+		t.Errorf("expected 1 item in chunk, got %d", len(chunks[0]))
+	}
+}
+
+func TestSplitSummaryChunks_LargeSplitsMultiple(t *testing.T) {
+	var items []store.SummaryItemRow
+	for i := 0; i < 50; i++ {
+		items = append(items, store.SummaryItemRow{
+			ID:        int64(i),
+			FromEmail: fmt.Sprintf("sender%d@example.com", i),
+			Subject:   "A reasonably long subject line for testing purposes",
+			Summary:   fmt.Sprintf("Unique summary %d that takes up space in the message to simulate real content", i),
+			Action:    "daily_summary",
+		})
+	}
+
+	chunks := splitSummaryChunks(items)
+	if len(chunks) < 2 {
+		t.Fatalf("expected multiple chunks for 50 items, got %d", len(chunks))
+	}
+
+	total := 0
+	for _, chunk := range chunks {
+		text := FormatSummary(chunk)
+		if len(text) > telegramMaxMessageLen {
+			t.Errorf("chunk exceeds telegram limit: %d > %d", len(text), telegramMaxMessageLen)
+		}
+		total += len(chunk)
+	}
+	if total != len(items) {
+		t.Errorf("chunks contain %d items, want %d", total, len(items))
+	}
+}
+
+func TestSplitSummaryChunks_Empty(t *testing.T) {
+	chunks := splitSummaryChunks(nil)
+	if chunks != nil {
+		t.Errorf("expected nil for empty input, got %v", chunks)
 	}
 }
 

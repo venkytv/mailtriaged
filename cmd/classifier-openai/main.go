@@ -269,7 +269,7 @@ func buildSystemPrompt(req request) string {
 
 	sb.WriteString("Action guidelines:\n")
 	sb.WriteString("- alert_now: time-sensitive, requires immediate attention (bank alerts, security warnings, urgent personal)\n")
-	sb.WriteString("- daily_summary: useful but not urgent (newsletters, CI, social updates). Provide a one-line summary.\n")
+	sb.WriteString("- daily_summary: useful but not urgent (newsletters, CI, social updates). Provide a brief summary (a few words, not a full sentence).\n")
 	sb.WriteString("- ignore: noise, no attention needed (automated non-critical alerts, marketing)\n")
 	sb.WriteString("- needs_review: uncertain — let the user decide\n\n")
 
@@ -279,7 +279,7 @@ func buildSystemPrompt(req request) string {
 	sb.WriteString("- Set safety to \"narrow\" if the rule uses multiple match fields or is very specific\n")
 	sb.WriteString("- Set safety to \"broad\" if the rule uses a single field like from_domain alone\n")
 	sb.WriteString("- Omit suggested_rule if the email is unusual or doesn't fit a repeatable pattern\n")
-	sb.WriteString("- Provide a summary for alert_now and daily_summary actions\n\n")
+	sb.WriteString("- Provide a terse summary (a few words, not a full sentence) for alert_now and daily_summary actions\n\n")
 
 	sb.WriteString("Confidence guidelines:\n")
 	sb.WriteString("- 0.9-1.0: obvious classification (e.g. known sender pattern, clear marketing/spam)\n")
@@ -334,7 +334,7 @@ func classifyToolSchema() toolDef {
 					},
 					"summary": map[string]any{
 						"type":        "string",
-						"description": "One-line summary for notifications. Required for alert_now and daily_summary.",
+						"description": "Terse summary (a few words, not a full sentence) for notifications. Required for alert_now and daily_summary.",
 					},
 					"suggested_rule": map[string]any{
 						"type":        "object",
