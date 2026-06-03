@@ -294,6 +294,34 @@ func TestHasSenderRule_CaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestHasSenderRule_NarrowRuleDoesNotBlock(t *testing.T) {
+	ruleList := []Rule{
+		{ID: "r1", Action: ActionDailySummary, Match: Match{
+			FromEmail:          "user@example.com",
+			SubjectContainsAll: []string{"Health Report"},
+		}},
+	}
+	if HasSenderRule(ruleList, "user@example.com", "", ActionDailySummary) {
+		t.Fatal("narrow rule with subject constraints should not block candidates for the same sender")
+	}
+}
+
+func TestHasSenderRule_BroadRuleBlocks(t *testing.T) {
+	ruleList := []Rule{
+		{ID: "r1", Action: ActionIgnore, Match: Match{FromEmail: "user@example.com"}},
+		{ID: "r2", Action: ActionDailySummary, Match: Match{
+			FromEmail:          "user@example.com",
+			SubjectContainsAll: []string{"Health Report"},
+		}},
+	}
+	if !HasSenderRule(ruleList, "user@example.com", "", ActionIgnore) {
+		t.Fatal("broad sender rule (no subject) should still block")
+	}
+	if HasSenderRule(ruleList, "user@example.com", "", ActionDailySummary) {
+		t.Fatal("only the narrow rule matches this action, and it has subject constraints")
+	}
+}
+
 func writeYAML(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {

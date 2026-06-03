@@ -55,6 +55,10 @@ type Match struct {
 	HeaderContains     map[string]string `yaml:"header_contains,omitempty" json:"header_contains,omitempty"`
 }
 
+func (m *Match) HasSubjectConstraints() bool {
+	return len(m.SubjectContainsAll) > 0 || len(m.SubjectContainsAny) > 0
+}
+
 func (m *Match) IsEmpty() bool {
 	return m.FromEmail == "" &&
 		m.FromDomain == "" &&
@@ -248,6 +252,9 @@ func containsFold(list []string, target string) bool {
 func HasSenderRule(ruleList []Rule, fromEmail, fromDomain string, action Action) bool {
 	for _, r := range ruleList {
 		if !r.IsEnabled() || r.Action != action {
+			continue
+		}
+		if r.Match.HasSubjectConstraints() {
 			continue
 		}
 		if fromEmail != "" && r.Match.FromEmail != "" &&
