@@ -9,6 +9,7 @@ import (
 
 	"github.com/venky/mailtriaged/internal/classifier"
 	"github.com/venky/mailtriaged/internal/config"
+	"github.com/venky/mailtriaged/internal/consolidate"
 	"github.com/venky/mailtriaged/internal/email"
 	"github.com/venky/mailtriaged/internal/rules"
 	"github.com/venky/mailtriaged/internal/store"
@@ -153,7 +154,11 @@ func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, d
 			log.Printf("skipping candidate: active rule already covers sender %q with action %s", sm.FromEmail, resp.Action)
 		} else {
 			candidatesPath := filepath.Join(rulesDir, "800-llm-candidates.yaml")
-			if err := classifier.AppendCandidate(candidatesPath, resp.SuggestedRule, msg.MessageID, resp.Reason); err != nil {
+			rejectedPath := filepath.Join(rulesDir, "900-rejected.yaml")
+			rejected, _ := consolidate.LoadRejected(rejectedPath)
+			if classifier.HasRejectedMatch(rejected, resp.SuggestedRule.Match) {
+				log.Printf("skipping candidate: matches previously rejected rule for sender %q", sm.FromEmail)
+			} else if err := classifier.AppendCandidate(candidatesPath, resp.SuggestedRule, msg.MessageID, resp.Reason); err != nil {
 				log.Printf("failed to append candidate rule: %v", err)
 			}
 		}

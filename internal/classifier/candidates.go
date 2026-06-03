@@ -76,8 +76,12 @@ func writeCandidates(path string, candidates []Candidate) error {
 }
 
 func hasDuplicateMatch(existing []Candidate, match rules.Match) bool {
+	return HasRejectedMatch(existing, match)
+}
+
+func HasRejectedMatch(candidates []Candidate, match rules.Match) bool {
 	key := matchKey(match)
-	for _, c := range existing {
+	for _, c := range candidates {
 		if matchKey(c.Match) == key {
 			return true
 		}

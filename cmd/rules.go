@@ -44,7 +44,7 @@ var rulesPromoteCmd = &cobra.Command{
 
 var rulesRejectCmd = &cobra.Command{
 	Use:   "reject <candidate-id>",
-	Short: "Reject a candidate rule",
+	Short: "Defer to classifier — no rule created, pattern suppressed from future suggestions",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runRulesReject,
 }
@@ -174,8 +174,8 @@ func runRulesReview(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%d candidate(s)\n", len(candidates))
-	fmt.Println("\nto promote:  mailtriaged rules promote <id>")
-	fmt.Println("to reject:   mailtriaged rules reject <id>")
+	fmt.Println("\nto promote:             mailtriaged rules promote <id>")
+	fmt.Println("to defer to classifier: mailtriaged rules reject <id>")
 	return nil
 }
 

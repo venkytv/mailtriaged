@@ -57,6 +57,7 @@ type tuiModel struct {
 	actions    []string
 	err        error
 	quitted    bool
+	showHelp   bool
 	width      int
 }
 
@@ -78,6 +79,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.showHelp {
+			m.showHelp = false
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quitted = true
@@ -91,12 +97,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.doPromote(rules.ActionAlertNow)
 		case "d":
 			return m.doPromote(rules.ActionDailySummary)
-		case "n":
-			return m.doPromote(rules.ActionNeedsReview)
 		case "r":
 			return m.doReject()
 		case "s":
 			return m.doSkip()
+		case "?":
+			m.showHelp = true
+			return m, nil
 		}
 	}
 	return m, nil
@@ -157,6 +164,10 @@ func (m tuiModel) View() string {
 		return ""
 	}
 
+	if m.showHelp {
+		return m.viewHelp()
+	}
+
 	c := m.candidates[m.index]
 	issues := rules.CheckSafety(c.Match, c.Action)
 	safety := "OK"
@@ -209,8 +220,34 @@ func (m tuiModel) View() string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(helpStyle.Render("  p promote  i ignore  a alert  d daily  n needs_review  r reject  s skip  q quit"))
+	sb.WriteString(helpStyle.Render("  p promote  i/a/d promote as...  r defer to classifier  s skip  q quit  ? help"))
 	sb.WriteString("\n")
 
 	return sb.String()
+}
+
+func (m tuiModel) viewHelp() string {
+	title := headerStyle.Render("Keybindings")
+	body := helpStyle.Render(strings.Join([]string{
+		"",
+		"  Promote (add as a permanent rule):",
+		"    p   promote with the suggested action",
+		"    i   promote as ignore",
+		"    a   promote as alert_now",
+		"    d   promote as daily_summary",
+		"",
+		"  Review:",
+		"    r   defer to classifier — no rule is created; the classifier",
+		"        will evaluate this pattern each time based on content.",
+		"        Future suggestions for this pattern are suppressed.",
+		"    s   skip — leave in candidates for later review",
+		"",
+		"  Navigation:",
+		"    q   quit",
+		"    ?   toggle this help",
+		"",
+		"  Press any key to return.",
+		"",
+	}, "\n"))
+	return title + "\n" + body
 }

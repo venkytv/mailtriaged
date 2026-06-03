@@ -86,6 +86,23 @@ func TestAppendCandidate_DeduplicatesMatch(t *testing.T) {
 	}
 }
 
+func TestHasRejectedMatch(t *testing.T) {
+	rejected := []Candidate{
+		{ID: "r1", Match: rules.Match{FromEmail: "a@b.com"}},
+		{ID: "r2", Match: rules.Match{FromDomain: "example.com"}},
+	}
+
+	if !HasRejectedMatch(rejected, rules.Match{FromEmail: "a@b.com"}) {
+		t.Error("expected match against rejected candidate")
+	}
+	if HasRejectedMatch(rejected, rules.Match{FromEmail: "other@b.com"}) {
+		t.Error("unexpected match against rejected candidate")
+	}
+	if HasRejectedMatch(nil, rules.Match{FromEmail: "a@b.com"}) {
+		t.Error("nil rejected list should not match")
+	}
+}
+
 func TestAppendCandidate_DifferentMatchNotDeduped(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "800-llm-candidates.yaml")

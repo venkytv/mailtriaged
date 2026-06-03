@@ -75,6 +75,22 @@ func Promote(candidatesPath, activePath string, candidateID string, actionOverri
 	return writeCandidates(candidatesPath, remaining)
 }
 
+func LoadRejected(path string) ([]classifier.Candidate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var rf rejectedFile
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		return nil, fmt.Errorf("parsing rejected: %w", err)
+	}
+	return rf.Rejected, nil
+}
+
 func Reject(candidatesPath, rejectedPath string, candidateID string) error {
 	candidates, err := LoadCandidates(candidatesPath)
 	if err != nil {
