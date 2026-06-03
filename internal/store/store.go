@@ -371,6 +371,7 @@ type SummaryItemRow struct {
 	FromEmail string
 	Subject   string
 	Action    string
+	Source    string
 	Reason    string
 }
 
@@ -378,7 +379,7 @@ func (s *Store) UnsentSummaryItems() ([]SummaryItemRow, error) {
 	rows, err := s.db.Query(
 		`SELECT si.id, si.message_id, si.summary, si.created_at,
 		        m.from_email, m.subject,
-		        COALESCE(d.action, ''), COALESCE(d.reason, '')
+		        COALESCE(d.action, ''), COALESCE(d.source, ''), COALESCE(d.reason, '')
 		 FROM summary_items si
 		 JOIN messages m ON m.id = si.message_id
 		 LEFT JOIN decisions d ON d.message_id = si.message_id
@@ -395,7 +396,7 @@ func (s *Store) UnsentSummaryItems() ([]SummaryItemRow, error) {
 	for rows.Next() {
 		var item SummaryItemRow
 		if err := rows.Scan(&item.ID, &item.MessageID, &item.Summary, &item.CreatedAt,
-			&item.FromEmail, &item.Subject, &item.Action, &item.Reason); err != nil {
+			&item.FromEmail, &item.Subject, &item.Action, &item.Source, &item.Reason); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

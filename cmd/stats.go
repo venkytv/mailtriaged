@@ -123,13 +123,20 @@ func printVerboseDetails(db *store.Store) error {
 	if len(items) == 0 {
 		fmt.Printf("  (none)\n")
 	} else {
-		fmt.Printf("  %-12s %-30s %s\n", "Date", "From", "Subject")
+		fmt.Printf("  %-12s %-30s %-4s %s\n", "Date", "From", "Via", "Subject")
 		for _, item := range items {
 			date := item.CreatedAt
 			if t, err := time.Parse(time.RFC3339, item.CreatedAt); err == nil {
 				date = t.Format("Jan 02 15:04")
 			}
-			fmt.Printf("  %-12s %-30s %s\n", date, truncate(item.FromEmail, 30), truncate(item.Subject, 55))
+			via := "?"
+			switch item.Source {
+			case "rule":
+				via = "rule"
+			case "classifier":
+				via = "llm"
+			}
+			fmt.Printf("  %-12s %-30s %-4s %s\n", date, truncate(item.FromEmail, 30), via, truncate(item.Subject, 55))
 		}
 	}
 
