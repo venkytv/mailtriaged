@@ -53,7 +53,7 @@ func ParseEML(r io.Reader, maxBodyChars int) (*Message, error) {
 		From:        from,
 		To:          to,
 		Cc:          cc,
-		Subject:     msg.Header.Get("Subject"),
+		Subject:     decodeHeader(msg.Header.Get("Subject")),
 		ReceivedAt:  msg.Header.Get("Date"),
 		Headers:     headers,
 		BodyExcerpt: body,
@@ -92,6 +92,15 @@ func parseAddressList(raw string) []string {
 		result[i] = a.Address
 	}
 	return result
+}
+
+func decodeHeader(raw string) string {
+	dec := &mime.WordDecoder{}
+	decoded, err := dec.DecodeHeader(raw)
+	if err != nil {
+		return raw
+	}
+	return decoded
 }
 
 func cleanMessageID(id string) string {

@@ -51,6 +51,48 @@ Dependabot has detected a vulnerability.`
 	}
 }
 
+func TestParseEML_MIMEEncodedSubject(t *testing.T) {
+	tests := []struct {
+		name    string
+		subject string
+		want    string
+	}{
+		{
+			name:    "base64 UTF-8",
+			subject: "=?UTF-8?B?SU5SIDE4OC42MiBzcGVudA==?=",
+			want:    "INR 188.62 spent",
+		},
+		{
+			name:    "quoted-printable UTF-8",
+			subject: "=?UTF-8?Q?Re=3A_hello_world?=",
+			want:    "Re: hello world",
+		},
+		{
+			name:    "mixed encoded and plain",
+			subject: "Reservation reminder =?UTF-8?B?4oCT?= 6 June 2026",
+			want:    "Reservation reminder – 6 June 2026",
+		},
+		{
+			name:    "plain ASCII unchanged",
+			subject: "Weekly digest",
+			want:    "Weekly digest",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eml := "From: a@b.com\nTo: c@d.com\nSubject: " + tt.subject + "\nContent-Type: text/plain\n\nbody"
+			msg, err := ParseEML(strings.NewReader(eml), 6000)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if msg.Subject != tt.want {
+				t.Errorf("got %q, want %q", msg.Subject, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseEML_HTMLOnly(t *testing.T) {
 	eml := `From: Newsletter <news@example.org>
 To: you@example.com
