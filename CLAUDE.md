@@ -38,3 +38,7 @@ See `mailtriaged_design.md` for the full design document. Implementation follows
 - All matching is case-insensitive for emails, domains, subjects, and header names.
 - The classifier is a generic CLI: stdin JSON in, stdout JSON out. No Hermes-specific code in the daemon.
 - Secrets come from macOS Keychain via command execution, never stored in config files.
+
+## Production Rules Maintenance
+
+Production rules live on mort at `~/.config/mailtriaged/rules/`. The classifier adds rules at runtime with auto-generated IDs that accumulate issues over time. Use the `/rules-cleanup` skill for the full cleanup workflow (fetch, analyse, lint, deploy).
