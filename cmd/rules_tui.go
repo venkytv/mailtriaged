@@ -58,6 +58,8 @@ type tuiModel struct {
 	err        error
 	quitted    bool
 	showHelp   bool
+	inputMode  bool
+	hintInput  string
 	width      int
 }
 
@@ -79,6 +81,30 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.inputMode {
+			switch msg.String() {
+			case "enter":
+				m.inputMode = false
+				hint := strings.TrimSpace(m.hintInput)
+				m.hintInput = ""
+				return m.doPromoteClassify(hint)
+			case "escape":
+				m.inputMode = false
+				m.hintInput = ""
+				return m, nil
+			case "backspace":
+				if len(m.hintInput) > 0 {
+					m.hintInput = m.hintInput[:len(m.hintInput)-1]
+				}
+				return m, nil
+			default:
+				if len(msg.String()) == 1 || msg.String() == " " {
+					m.hintInput += msg.String()
+				}
+				return m, nil
+			}
+		}
+
 		if m.showHelp {
 			m.showHelp = false
 			return m, nil
@@ -97,6 +123,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.doPromote(rules.ActionAlertNow)
 		case "d":
 			return m.doPromote(rules.ActionDailySummary)
+		case "c":
+			m.inputMode = true
+			m.hintInput = ""
+			return m, nil
 		case "r":
 			return m.doReject()
 		case "s":
@@ -122,6 +152,22 @@ func (m tuiModel) doPromote(actionOverride rules.Action) (tea.Model, tea.Cmd) {
 		action = actionOverride
 	}
 	m.actions = append(m.actions, fmt.Sprintf("promoted  %-40s → %s", c.ID, action))
+	return m.advance()
+}
+
+func (m tuiModel) doPromoteClassify(hint string) (tea.Model, tea.Cmd) {
+	c := m.candidates[m.index]
+	err := consolidate.Promote(candidatesPath(), activePath(), c.ID, rules.ActionClassify, hint)
+	if err != nil {
+		m.err = err
+		return m, tea.Quit
+	}
+
+	label := "classify"
+	if hint != "" {
+		label += fmt.Sprintf(" (%s)", hint)
+	}
+	m.actions = append(m.actions, fmt.Sprintf("promoted  %-40s → %s", c.ID, label))
 	return m.advance()
 }
 
@@ -166,6 +212,10 @@ func (m tuiModel) View() string {
 
 	if m.showHelp {
 		return m.viewHelp()
+	}
+
+	if m.inputMode {
+		return m.viewHintInput()
 	}
 
 	c := m.candidates[m.index]
@@ -220,9 +270,21 @@ func (m tuiModel) View() string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(helpStyle.Render("  p promote  i/a/d promote as...  r defer to classifier  s skip  q quit  ? help"))
+	sb.WriteString(helpStyle.Render("  p promote  i/a/d/c promote as...  r defer to classifier  s skip  q quit  ? help"))
 	sb.WriteString("\n")
 
+	return sb.String()
+}
+
+func (m tuiModel) viewHintInput() string {
+	var sb strings.Builder
+	sb.WriteString(headerStyle.Render("Promote as classify"))
+	sb.WriteString("\n\n")
+	sb.WriteString(fmt.Sprintf("  %s\n", labelStyle.Render("Enter classifier hint (guidance for the LLM classifier):")))
+	sb.WriteString(fmt.Sprintf("  > %s█\n", m.hintInput))
+	sb.WriteString("\n")
+	sb.WriteString(helpStyle.Render("  enter confirm  escape cancel"))
+	sb.WriteString("\n")
 	return sb.String()
 }
 
@@ -235,6 +297,9 @@ func (m tuiModel) viewHelp() string {
 		"    i   promote as ignore",
 		"    a   promote as alert_now",
 		"    d   promote as daily_summary",
+		"    c   promote as classify — matches the email but passes it to",
+		"        the classifier with a hint you provide. Use this when the",
+		"        action depends on the email's content (e.g. success vs failure).",
 		"",
 		"  Review:",
 		"    r   defer to classifier — no rule is created; the classifier",

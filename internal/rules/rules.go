@@ -14,6 +14,7 @@ type Action string
 
 const (
 	ActionAlertNow     Action = "alert_now"
+	ActionClassify     Action = "classify"
 	ActionDailySummary Action = "daily_summary"
 	ActionIgnore       Action = "ignore"
 	ActionNeedsReview  Action = "needs_review"
@@ -21,6 +22,7 @@ const (
 
 var validActions = map[Action]bool{
 	ActionAlertNow:     true,
+	ActionClassify:     true,
 	ActionDailySummary: true,
 	ActionIgnore:       true,
 	ActionNeedsReview:  true,
@@ -31,12 +33,13 @@ func IsValidAction(a Action) bool {
 }
 
 type Rule struct {
-	ID          string `yaml:"id"`
-	Enabled     *bool  `yaml:"enabled"`
-	Description string `yaml:"description"`
-	Match       Match  `yaml:"match"`
-	Action      Action `yaml:"action"`
-	Source      string `yaml:"source"`
+	ID             string `yaml:"id"`
+	Enabled        *bool  `yaml:"enabled"`
+	Description    string `yaml:"description"`
+	Match          Match  `yaml:"match"`
+	Action         Action `yaml:"action"`
+	ClassifierHint string `yaml:"classifier_hint,omitempty"`
+	Source         string `yaml:"source"`
 }
 
 func (r *Rule) IsEnabled() bool {
@@ -132,10 +135,11 @@ func Validate(rules []Rule) error {
 }
 
 type Decision struct {
-	Action Action `json:"action"`
-	Source string `json:"source"`
-	RuleID string `json:"rule_id,omitempty"`
-	Reason string `json:"reason"`
+	Action         Action `json:"action"`
+	Source         string `json:"source"`
+	RuleID         string `json:"rule_id,omitempty"`
+	Reason         string `json:"reason"`
+	ClassifierHint string `json:"classifier_hint,omitempty"`
 }
 
 func Evaluate(rules []Rule, msg MessageData) *Decision {
@@ -145,10 +149,11 @@ func Evaluate(rules []Rule, msg MessageData) *Decision {
 		}
 		if matchRule(r.Match, msg) {
 			return &Decision{
-				Action: r.Action,
-				Source: "rule",
-				RuleID: r.ID,
-				Reason: "Matched active rule",
+				Action:         r.Action,
+				Source:         "rule",
+				RuleID:         r.ID,
+				Reason:         "Matched active rule",
+				ClassifierHint: r.ClassifierHint,
 			}
 		}
 	}
@@ -251,7 +256,10 @@ func containsFold(list []string, target string) bool {
 
 func HasSenderRule(ruleList []Rule, fromEmail, fromDomain string, action Action) bool {
 	for _, r := range ruleList {
-		if !r.IsEnabled() || r.Action != action {
+		if !r.IsEnabled() {
+			continue
+		}
+		if r.Action != action && r.Action != ActionClassify {
 			continue
 		}
 		if r.Match.HasSubjectConstraints() {

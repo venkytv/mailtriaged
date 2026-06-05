@@ -31,7 +31,7 @@ func LoadCandidates(path string) ([]classifier.Candidate, error) {
 	return cf.Candidates, nil
 }
 
-func Promote(candidatesPath, activePath string, candidateID string, actionOverride rules.Action) error {
+func Promote(candidatesPath, activePath string, candidateID string, actionOverride rules.Action, classifierHint ...string) error {
 	candidates, err := LoadCandidates(candidatesPath)
 	if err != nil {
 		return fmt.Errorf("loading candidates: %w", err)
@@ -60,12 +60,18 @@ func Promote(candidatesPath, activePath string, candidateID string, actionOverri
 		return fmt.Errorf("candidate %q failed safety check: %s", candidateID, issues[0].Message)
 	}
 
+	hint := ""
+	if len(classifierHint) > 0 {
+		hint = classifierHint[0]
+	}
+
 	newRule := rules.Rule{
-		ID:          target.ID,
-		Description: target.Reason,
-		Match:       target.Match,
-		Action:      action,
-		Source:      "classifier",
+		ID:             target.ID,
+		Description:    target.Reason,
+		Match:          target.Match,
+		Action:         action,
+		ClassifierHint: hint,
+		Source:         "classifier",
 	}
 
 	if err := appendActiveRule(activePath, newRule); err != nil {

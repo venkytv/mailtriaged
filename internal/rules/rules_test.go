@@ -322,6 +322,65 @@ func TestHasSenderRule_BroadRuleBlocks(t *testing.T) {
 	}
 }
 
+func TestValidate_ClassifyAction(t *testing.T) {
+	rules := []Rule{
+		{ID: "backup", Action: ActionClassify, Match: Match{FromEmail: "a@example.com"}, ClassifierHint: "check success"},
+	}
+	if err := Validate(rules); err != nil {
+		t.Fatalf("classify action should be valid: %v", err)
+	}
+}
+
+func TestEvaluate_ClassifyAction(t *testing.T) {
+	rules := []Rule{
+		{ID: "backup", Action: ActionClassify, Match: Match{FromEmail: "a@example.com"}, ClassifierHint: "if success ignore, if failure alert_now"},
+	}
+	msg := MessageData{FromEmail: "a@example.com"}
+	d := Evaluate(rules, msg)
+	if d == nil {
+		t.Fatal("expected decision")
+	}
+	if d.Action != ActionClassify {
+		t.Fatalf("expected classify, got %s", d.Action)
+	}
+	if d.ClassifierHint != "if success ignore, if failure alert_now" {
+		t.Fatalf("expected hint, got %q", d.ClassifierHint)
+	}
+}
+
+func TestHasSenderRule_ClassifyBlocksAnySender(t *testing.T) {
+	ruleList := []Rule{
+		{ID: "r1", Action: ActionClassify, Match: Match{FromEmail: "a@example.com"}},
+	}
+	if !HasSenderRule(ruleList, "a@example.com", "", ActionIgnore) {
+		t.Fatal("classify rule should block candidates for any action")
+	}
+	if !HasSenderRule(ruleList, "a@example.com", "", ActionAlertNow) {
+		t.Fatal("classify rule should block candidates for any action")
+	}
+}
+
+func TestLoadDir_ClassifyHint(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, filepath.Join(dir, "000-test.yaml"), `rules:
+  - id: backup
+    action: classify
+    classifier_hint: "if success ignore, if failure alert"
+    match:
+      from_email: a@example.com
+`)
+	rules, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+	if rules[0].ClassifierHint != "if success ignore, if failure alert" {
+		t.Fatalf("expected classifier_hint, got %q", rules[0].ClassifierHint)
+	}
+}
+
 func writeYAML(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {

@@ -76,6 +76,22 @@ func ClassifyMessage(cfg *config.Config, rulesDir string, msg *email.Message, sk
 
 	if !cfg.Runtime.DisableRules {
 		if decision := rules.Evaluate(ruleList, msgData); decision != nil {
+			if decision.Action == rules.ActionClassify {
+				if skipClassifier {
+					result := &Result{
+						Action:  rules.ActionNeedsReview,
+						Source:  "rule",
+						RuleID:  decision.RuleID,
+						Reason:  "Matched classify rule; classifier skipped (dry-run)",
+						MsgDBID: msgID,
+					}
+					if db != nil {
+						logDecision(db, msgID, result)
+					}
+					return result, nil
+				}
+				return invokeClassifier(cfg, rulesDir, msg, db, msgID, decision.ClassifierHint)
+			}
 			result := &Result{
 				Action:  decision.Action,
 				Source:  decision.Source,
@@ -108,11 +124,18 @@ func ClassifyMessage(cfg *config.Config, rulesDir string, msg *email.Message, sk
 		return result, nil
 	}
 
-	return invokeClassifier(cfg, rulesDir, msg, db, msgID)
+	return invokeClassifier(cfg, rulesDir, msg, db, msgID, "")
 }
 
-func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, db *store.Store, msgID int64) (*Result, error) {
-	req := classifier.BuildRequest(msg, cfg.Classifier.Instruction)
+func invokeClassifier(cfg *config.Config, rulesDir string, msg *email.Message, db *store.Store, msgID int64, classifierHint string) (*Result, error) {
+	instruction := cfg.Classifier.Instruction
+	if classifierHint != "" {
+		if instruction != "" {
+			instruction += "\n\n"
+		}
+		instruction += classifierHint
+	}
+	req := classifier.BuildRequest(msg, instruction)
 
 	resp, record := classifier.Execute(cfg.Classifier.Command, req, cfg.Classifier.TimeoutSeconds)
 
