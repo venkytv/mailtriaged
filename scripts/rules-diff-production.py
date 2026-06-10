@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Diff a local rules file against what's running on production (mort).
+"""Diff a local rules file against a deployed rules file over SSH.
 
 Compares rule IDs to show added, removed, and changed rules.
-Requires SSH access to mort.
+Requires SSH access to the target host.
 
-Usage: scripts/rules-diff-production.py <local-rules-file> [remote-rules-file]
+Usage:
+  scripts/rules-diff-production.py <local-rules-file> --remote-host <host> --remote-file <path>
 """
 
 import argparse
@@ -13,13 +14,10 @@ import sys
 from pathlib import Path
 
 import yaml
-
-DEFAULT_REMOTE = "/Users/mort/.config/mailtriaged/rules/100-active.yaml"
-
-
-def fetch_remote_rules(remote_path: str) -> list[dict]:
+def fetch_remote_rules(remote_host: str, remote_path: str, ssh_user: str = "") -> list[dict]:
+    host = f"{ssh_user}@{remote_host}" if ssh_user else remote_host
     result = subprocess.run(
-        ["ssh", "mort", "cat", remote_path],
+        ["ssh", host, "cat", remote_path],
         capture_output=True,
         text=True,
     )
@@ -57,10 +55,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("local_file", type=Path, help="Path to local rules YAML file")
     parser.add_argument(
-        "remote_file",
-        nargs="?",
-        default=DEFAULT_REMOTE,
-        help=f"Remote rules file path (default: {DEFAULT_REMOTE})",
+        "--remote-host",
+        required=True,
+        help="SSH host that has the deployed rules file",
+    )
+    parser.add_argument(
+        "--remote-file",
+        required=True,
+        help="Path to the deployed rules YAML file on the remote host",
+    )
+    parser.add_argument(
+        "--ssh-user",
+        default="",
+        help="Optional SSH username; defaults to the current SSH configuration",
     )
     args = parser.parse_args()
 
@@ -69,7 +76,7 @@ def main():
         sys.exit(1)
 
     local_rules = load_local_rules(args.local_file)
-    remote_rules = fetch_remote_rules(args.remote_file)
+    remote_rules = fetch_remote_rules(args.remote_host, args.remote_file, args.ssh_user)
 
     local_by_id = rules_by_id(local_rules)
     remote_by_id = rules_by_id(remote_rules)

@@ -1,11 +1,13 @@
 ---
 name: rules-cleanup
-description: Clean up production mailtriaged rules on mort. Fetch current rules, identify issues, write cleaned file, validate, and deploy.
+description: Clean up deployed mailtriaged rules. Fetch current rules, identify issues, write cleaned file, validate, and deploy.
 ---
 
 # Rules Cleanup
 
-Clean up the production rules file on mort. The daemon's classifier adds rules at runtime with auto-generated IDs that accumulate issues over time.
+Clean up a deployed rules file. The daemon's classifier can add or promote rules over time, and those rules may accumulate auto-generated IDs, redundant matches, or overly narrow subject filters.
+
+Use project-local ignored memory for private hostnames, paths, and deploy commands. Do not add those details to tracked docs, scripts, or skill instructions.
 
 ## What to look for
 
@@ -18,9 +20,9 @@ Clean up the production rules file on mort. The daemon's classifier adds rules a
 
 ## Steps
 
-1. **Fetch current production rules**:
+1. **Fetch current deployed rules**:
    ```
-   mcp__mort__run_command: cat /Users/mort/.config/mailtriaged/rules/100-active.yaml
+   ssh <host> cat <remote-rules-file>
    ```
 
 2. **Analyse and present findings** to the user. Group by issue type. Ask user to confirm cleanup scope before proceeding.
@@ -30,16 +32,16 @@ Clean up the production rules file on mort. The daemon's classifier adds rules a
 4. **Validate and lint**:
    ```bash
    python3 scripts/rules-lint.py /tmp/100-active.yaml
-   python3 scripts/rules-diff-production.py /tmp/100-active.yaml
+   python3 scripts/rules-diff-production.py /tmp/100-active.yaml --remote-host <host> --remote-file <remote-rules-file>
    ```
    Show the diff output to the user.
 
-5. **Deploy** via ansible (creates backup on mort):
+5. **Deploy** using the deployment flow for the target environment:
    ```bash
-   cd ~/src/ansible && ./deploy.sh mailtriaged-rules.yml -e "rules_src=/tmp/100-active.yaml" --diff
+   <deploy-command> /tmp/100-active.yaml
    ```
 
-6. **Verify** on production:
+6. **Verify** on the target host:
    ```
-   mcp__mort__run_command: /Users/mort/.local/bin/mailtriaged rules validate
+   mailtriaged rules validate
    ```

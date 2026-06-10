@@ -1,92 +1,10 @@
 # mailtriaged
 
-Personal mail triage daemon for macOS. Watches IMAP mailboxes via IDLE, applies local YAML rules, and calls an external classifier CLI for unmatched emails.
+Personal mail triage daemon for macOS. Watches IMAP mailboxes via IDLE, applies local YAML rules first, and calls an external classifier CLI only for unmatched emails.
 
 ## Setup
 
-**1. Install the binary:**
-```bash
-go install github.com/venky/mailtriaged@latest
-# or from the repo:
-go build -o ~/bin/mailtriaged .
-```
-
-**2. Create config directory:**
-```bash
-mkdir -p ~/.config/mailtriaged/rules
-```
-
-**3. Store secrets in macOS Keychain:**
-```bash
-# IMAP password
-security add-generic-password -a you@example.com -s imap-mailtriaged -w
-
-# Telegram bot token (if using notifications)
-security add-generic-password -s telegram-mailtriaged -w
-```
-
-**4. Write config:**
-```yaml
-# ~/.config/mailtriaged/config.yaml
-imap:
-  host: imap.example.com
-  port: 993
-  username: you@example.com
-  password_command: "security find-generic-password -a you@example.com -s imap-mailtriaged -w"
-  folders:
-    - INBOX
-
-classifier:
-  command:
-    - hermes
-    - run
-    - mail-triage
-  timeout_seconds: 30
-  max_body_excerpt_chars: 6000
-  # Extra guidance appended to the default classifier prompt (see below).
-  # instruction: "Mailing lists should generally be classified as ignore."
-
-notifications:
-  telegram:
-    enabled: true
-    bot_token_command: "security find-generic-password -s telegram-mailtriaged -w"
-    chat_id: "YOUR_CHAT_ID"
-
-summary:
-  enabled: true
-  send_time: "08:00"
-  timezone: "Europe/London"
-
-runtime:
-  reconnect_backoff_seconds: [5, 15, 60, 300]
-```
-
-**5. Write initial rules:**
-```yaml
-# ~/.config/mailtriaged/rules/000-manual.yaml
-rules:
-  - id: bank_alerts
-    enabled: true
-    description: "Immediate alert for bank emails"
-    match:
-      from_domain: mybank.com
-      subject_contains_any:
-        - declined
-        - fraud
-    action: alert_now
-    source: manual
-
-  - id: github_dependabot_ignore
-    enabled: true
-    description: "Ignore Dependabot alerts"
-    match:
-      from_email: notifications@github.com
-      subject_contains_all:
-        - dependabot
-        - alert
-    action: ignore
-    source: manual
-```
+See [INSTALL.md](INSTALL.md) for full setup instructions, including config, Keychain secrets, starter rules, launchd installation, and troubleshooting.
 
 ## CLI Commands
 
@@ -139,7 +57,7 @@ mailtriaged stats --days 30    # last 30 days
 3. No rule matches → external classifier CLI is called (JSON in/out on stdin/stdout)
 4. Classifier suggests a rule → appended to `rules/800-llm-candidates.yaml`
 5. Actions dispatched: `alert_now` → immediate Telegram, `daily_summary` → batched, `ignore` → silent, `needs_review` → included in daily summary
-6. You periodically run `rules review` to promote or reject candidates
+6. You periodically run `rules review` to promote or reject candidates, so future matching emails are handled locally without another classifier call
 
 ## Bundled Classifier (OpenAI)
 

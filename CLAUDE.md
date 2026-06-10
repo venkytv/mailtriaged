@@ -1,6 +1,6 @@
 # mailtriaged
 
-Personal mail triage daemon for macOS. Watches IMAP mailboxes, applies local YAML rules, and calls an external classifier CLI for unmatched emails.
+Personal mail triage daemon for macOS. Watches IMAP mailboxes, applies local YAML rules first, and calls an external classifier CLI only for unmatched emails.
 
 ## Build & Test
 
@@ -39,6 +39,6 @@ See `mailtriaged_design.md` for the full design document. Implementation follows
 - The classifier is a generic CLI: stdin JSON in, stdout JSON out. No Hermes-specific code in the daemon.
 - Secrets come from macOS Keychain via command execution, never stored in config files.
 
-## Production Rules Maintenance
+## Rules Maintenance
 
-Production rules live on mort at `~/.config/mailtriaged/rules/`. The classifier adds rules at runtime with auto-generated IDs that accumulate issues over time. Use the `/rules-cleanup` skill for the full cleanup workflow (fetch, analyse, lint, deploy).
+Long-running deployments may accumulate classifier-generated candidate or promoted rules with auto-generated IDs, redundant matches, or overly narrow subject filters. Use the `/rules-cleanup` skill for a generic fetch, analyse, lint, and deploy workflow. Keep hostnames, private paths, and deployment commands in ignored local memory rather than tracked repo files.

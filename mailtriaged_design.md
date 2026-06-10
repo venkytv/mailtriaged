@@ -4,7 +4,7 @@
 
 `mailtriaged` is a small personal mail triage daemon for macOS.
 
-Its purpose is not to replace a mail client or build a general-purpose priority inbox. Its purpose is to reduce LLM token burn by applying local rules first and calling an LLM-backed classifier only when local rules do not already cover the incoming email.
+Its purpose is not to replace a mail client or build a general-purpose priority inbox. Its purpose is to reduce LLM token burn by applying local rules first and calling an LLM-backed classifier only when local rules do not already cover the incoming email. When the classifier handles an unmatched email, it can suggest a candidate rule so similar future mail is classified locally without another LLM call.
 
 The daemon is intentionally simple:
 
@@ -24,7 +24,7 @@ matched?
           apply action
 ```
 
-The external classifier will likely be Hermes, but `mailtriaged` must not know or care about Hermes specifically. It should execute a configured command, send JSON to stdin, and expect JSON on stdout.
+The external classifier is intentionally generic. `mailtriaged` executes a configured command, sends JSON to stdin, and expects JSON on stdout.
 
 ---
 
@@ -63,7 +63,7 @@ The external classifier will likely be Hermes, but `mailtriaged` must not know o
 mailtriaged      Go daemon
 SQLite           local state/event log
 YAML files       active rules and candidate rules
-CLI classifier   generic external command, likely Hermes
+CLI classifier   generic external command
 Telegram         notification sink, at least initially
 launchd          macOS process supervision
 ```
@@ -1010,4 +1010,3 @@ It should not:
 - require a local mail stack
 
 The intelligence belongs in the external classifier and in the separate consolidation workflow, not in the daemon hot path.
-
