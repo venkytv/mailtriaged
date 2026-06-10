@@ -12,11 +12,11 @@ Use project-local ignored memory for private hostnames, paths, and deploy comman
 ## What to look for
 
 1. **Redundant rules**: a later rule can never fire because an earlier rule already matches the same sender (first-match-wins)
-2. **Shadowed rules**: same sender + overlapping subject match with a different action — the later one is dead
+2. **Shadowed rules**: same sender + overlapping subject match with a different action — the later one is dead. Also check the inverse pattern: a more specific rule placed after a broader same-sender rule is unreachable even when both rules are intentional. Example: `from_email + subject_contains_all: [Synology C2, successful]` must come before a broader `from_email + subject_contains_all: [Synology C2]` classifier fallback.
 3. **Overly narrow subject filters on marketing/newsletter senders**: classifier-generated rules include campaign-specific subject words (e.g. `subject_contains_any: [best-value beaches, summer]`). For senders where ALL mail should get the same action, remove the subject filter so future campaigns match. Be careful with senders that have multiple rules with different actions (e.g. Wise returns=ignore vs Wise promos=daily_summary) — those need the subject filter to distinguish
 4. **Malformed match fields**: raw header values that weren't parsed correctly (e.g. a `list_id` containing the full header instead of the extracted ID)
 5. **Auto-generated IDs**: rename `candidate_YYYYMMDD_HHMMSS` to descriptive kebab-case IDs matching the style of reviewed rules (e.g. `marketing_british_airways`, `royalmail_delivery_today`)
-6. **Ordering**: group rules by action (alert_now first, then daily_summary, then ignore). Within a sender, more specific rules must come before broader ones
+6. **Ordering**: group rules by action (alert_now first, then daily_summary, then classify, then ignore) only after preserving sender-specific precedence. Within a sender, more specific rules must come before broader ones, even if that means an ignore exception appears before a classify or daily_summary fallback.
 
 ## Steps
 

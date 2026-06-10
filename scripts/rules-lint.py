@@ -4,7 +4,7 @@
 Checks:
   - YAML parsing and daemon validation (via `go run . rules validate`)
   - Duplicate rule IDs
-  - Redundant rules (same from_email, later rule shadowed by earlier broad match)
+  - Redundant rules (later rule shadowed by earlier broader match)
 
 Usage: scripts/rules-lint.py <rules-file>
 """
@@ -69,25 +69,128 @@ def check_duplicate_ids(rules: list[dict]) -> list[str]:
 
 
 def check_redundant_rules(rules: list[dict]) -> list[str]:
-    """Find rules shadowed by an earlier broad rule on the same from_email."""
+    """Find rules shadowed by an earlier broader rule."""
     warnings = []
     for i, earlier in enumerate(rules):
-        match_e = earlier.get("match", {})
-        email_e = match_e.get("from_email", "")
-        if not email_e:
+        if not is_enabled(earlier):
             continue
-        has_subject = match_e.get("subject_contains_all") or match_e.get("subject_contains_any")
-        if has_subject:
-            continue
-
         for later in rules[i + 1 :]:
-            match_l = later.get("match", {})
-            if match_l.get("from_email") == email_e:
+            if not is_enabled(later):
+                continue
+            if match_implies(later.get("match", {}), earlier.get("match", {})):
                 warnings.append(
                     f"'{later['id']}' is unreachable — "
-                    f"'{earlier['id']}' already matches all mail from {email_e}"
+                    f"'{earlier['id']}' matches a broader or equal set of messages"
                 )
     return warnings
+
+
+def is_enabled(rule: dict) -> bool:
+    return rule.get("enabled", True) is not False
+
+
+def match_implies(later: dict, earlier: dict) -> bool:
+    """Return true if every message matching later also matches earlier."""
+    return (
+        sender_implies(later, earlier)
+        and scalar_fields_imply(later, earlier, ["to_contains", "cc_contains", "list_id"])
+        and subject_implies(later, earlier)
+        and headers_imply(later, earlier)
+    )
+
+
+def sender_implies(later: dict, earlier: dict) -> bool:
+    earlier_email = norm(earlier.get("from_email"))
+    later_email = norm(later.get("from_email"))
+    earlier_domain = norm(earlier.get("from_domain"))
+    later_domain = norm(later.get("from_domain"))
+
+    if earlier_email and earlier_email != later_email:
+        return False
+
+    if earlier_domain:
+        if later_domain == earlier_domain:
+            return True
+        if later_email and email_domain(later_email) == earlier_domain:
+            return True
+        return False
+
+    return True
+
+
+def scalar_fields_imply(later: dict, earlier: dict, fields: list[str]) -> bool:
+    for field in fields:
+        earlier_value = norm(earlier.get(field))
+        if earlier_value and norm(later.get(field)) != earlier_value:
+            return False
+    return True
+
+
+def subject_implies(later: dict, earlier: dict) -> bool:
+    earlier_all = norm_list(earlier.get("subject_contains_all"))
+    earlier_any = norm_list(earlier.get("subject_contains_any"))
+    later_all = norm_list(later.get("subject_contains_all"))
+    later_any = norm_list(later.get("subject_contains_any"))
+
+    # Earlier requires all of these terms, so later must guarantee all of them.
+    if not earlier_all.issubset(later_all):
+        return False
+
+    # Earlier requires none of these terms.
+    if not earlier_any:
+        return True
+
+    # Later's all-terms already guarantee at least one earlier any-term.
+    if earlier_any & later_all:
+        return True
+
+    # If later only guarantees one of several any-terms, each possible later term
+    # must also satisfy the earlier any-term set.
+    if later_any and later_any.issubset(earlier_any):
+        return True
+
+    return False
+
+
+def headers_imply(later: dict, earlier: dict) -> bool:
+    later_equals = norm_map(later.get("header_equals"))
+    later_contains = norm_map(later.get("header_contains"))
+    earlier_equals = norm_map(earlier.get("header_equals"))
+    earlier_contains = norm_map(earlier.get("header_contains"))
+
+    for key, earlier_value in earlier_equals.items():
+        if later_equals.get(key) != earlier_value:
+            return False
+
+    for key, earlier_value in earlier_contains.items():
+        later_equal = later_equals.get(key)
+        later_contain = later_contains.get(key)
+        if later_equal and earlier_value in later_equal:
+            continue
+        if later_contain and earlier_value in later_contain:
+            continue
+        return False
+
+    return True
+
+
+def norm(value: object) -> str:
+    return str(value or "").lower()
+
+
+def norm_list(values: object) -> set[str]:
+    return {norm(v) for v in values or []}
+
+
+def norm_map(values: object) -> dict[str, str]:
+    return {norm(k): norm(v) for k, v in (values or {}).items()}
+
+
+def email_domain(email: str) -> str:
+    parts = email.rsplit("@", 1)
+    if len(parts) != 2:
+        return ""
+    return parts[1]
 
 
 def main():
@@ -124,7 +227,7 @@ def main():
         print("OK: No duplicate IDs")
 
     # Redundant rules
-    print("\n--- Checking for redundant rules (same sender, broader earlier rule) ---")
+    print("\n--- Checking for redundant rules (broader earlier match) ---")
     redundant = check_redundant_rules(rules)
     if redundant:
         for w in redundant:
