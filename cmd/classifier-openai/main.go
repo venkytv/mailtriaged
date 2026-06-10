@@ -282,6 +282,7 @@ func buildSystemPrompt(req request) string {
 	sb.WriteString("Rule suggestion guidelines:\n")
 	sb.WriteString("- Suggest a rule when the email fits a recurring pattern\n")
 	sb.WriteString("- Prefer narrow rules: use 2+ match fields (e.g. from_email + subject_contains_all)\n")
+	sb.WriteString("- If the subject contains severity or status markers such as Critical, Warning, Resolved, Failed, or Success, include those discriminating words in subject_contains_all so alert and recovery messages do not share one broad rule\n")
 	sb.WriteString("- Set safety to \"narrow\" if the rule uses multiple match fields or is very specific\n")
 	sb.WriteString("- Set safety to \"broad\" if the rule uses a single field like from_domain alone\n")
 	sb.WriteString("- Omit suggested_rule if the email is unusual or doesn't fit a repeatable pattern\n")

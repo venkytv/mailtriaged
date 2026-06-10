@@ -269,7 +269,7 @@ func TestBuildSystemPrompt(t *testing.T) {
 	if prompt == "" {
 		t.Fatal("empty system prompt")
 	}
-	for _, want := range []string{"Classify this email.", "alert_now", "from_email", "regex is NOT supported", "Confidence"} {
+	for _, want := range []string{"Classify this email.", "alert_now", "from_email", "regex is NOT supported", "Confidence", "Critical", "Resolved"} {
 		if !contains(prompt, want) {
 			t.Errorf("system prompt missing %q", want)
 		}
